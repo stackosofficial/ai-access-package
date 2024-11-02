@@ -1,7 +1,9 @@
 import { Request, Response, NextFunction } from "express";
 import { getSkyNode } from "../clients/skynet";
 import { ETHAddress, SkyContractService } from "@decloudlabs/skynet/lib/types/types";
+import dotenv from "dotenv";
 
+dotenv.config();
 
 export const checkBalance = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -61,7 +63,7 @@ export const checkBalance = async (req: Request, res: Response, next: NextFuncti
         }
         console.log("app List", appList.data);
         for (const app of appList.data) {
-            if (app.subnetList[0] === "6") {
+            if (app.subnetList[0] === process.env.SUBNET_ID) {
                 if (app.appSubnetConfig[0].multiplier[0] == 1) {
                     return next()
                 } else {
