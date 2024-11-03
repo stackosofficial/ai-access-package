@@ -4,12 +4,21 @@ import { CreateAppEnvVariables } from "@decloudlabs/skynet/lib/types/types";
 import { AppComputePayload, AppModifier, DripRateFactors, STORAGE_TYPE, SubscriptionParam } from "@decloudlabs/skynet/lib/types/types";
 import { ContractApp } from "@decloudlabs/skynet/lib/types/types";
 import { getSkyNode } from "./clients/skynet";
+import { ethers } from "ethers";
 
-export const createApp = async (projectId: string, appName: string, dockerImageName: string, dockerTag: string, containerPort: number, resourceType: number[], resourceCount: number[], multiplier: number[], balance: string, subnetId: string, environmentVariables: CreateAppEnvVariables[] = []): Promise<APICallReturn<string>> => {
+export const createApp = async (appName: string, dockerImageName: string, dockerTag: string, containerPort: number, resourceType: number[], resourceCount: number[], multiplier: number[], balance: number, environmentVariables: CreateAppEnvVariables[] = []): Promise<APICallReturn<string>> => {
     const skyNode: SkyMainNodeJS = await getSkyNode();
 
+    const projectId = await mintProject();
+    if (!projectId.success) {
+        return {
+            success: false,
+            data: new Error(projectId.data.toString())
+        };
+    }
+
     const contractApp: ContractApp = {
-        nftID: projectId,
+        nftID: projectId.data,
         appID: "",
         appName: `${appName}`,
         appPath: Buffer.from(STORAGE_TYPE.LIGHTHOUSE + '/').toString('hex'),
@@ -19,9 +28,9 @@ export const createApp = async (projectId: string, appName: string, dockerImageN
             resourceCount: resourceCount,
             multiplier: multiplier
         }],
-        subnetList: [subnetId],
+        subnetList: ["0"],
         cidLock: false,
-        nftRange: [[projectId, projectId]]
+        nftRange: [[projectId.data, projectId.data]]
     }
 
     let subscriptionParam: SubscriptionParam = {
@@ -32,7 +41,7 @@ export const createApp = async (projectId: string, appName: string, dockerImageN
         createTime: 0
     }
 
-    const createTimeResp = await skyNode.dripRateManager.getSubscriptionParam(projectId);
+    const createTimeResp = await skyNode.dripRateManager.getSubscriptionParam(projectId.data);
 
     if (createTimeResp && createTimeResp.success) {
         if (createTimeResp.data.createTime > 0) {
@@ -53,8 +62,8 @@ export const createApp = async (projectId: string, appName: string, dockerImageN
 
     const appPayload: AppComputePayload = {
         appName: `${appName}`,
-        nftID: `${projectId}`,
-        namespace: `n${projectId}`,
+        nftID: `${projectId.data}`,
+        namespace: `n${projectId.data}`,
         persistence: [],
         containers: [
             {
@@ -64,7 +73,7 @@ export const createApp = async (projectId: string, appName: string, dockerImageN
                 httpPorts: [
                     {
                         hostURL: {
-                            urlString: `${appName}-n${projectId}.stackos.io`,
+                            urlString: `${appName}-n${projectId.data}.stackos.io`,
                             createMode: 'CREATE',
                         },
                         containerPort: containerPort.toString(),
@@ -95,11 +104,20 @@ export const createApp = async (projectId: string, appName: string, dockerImageN
         loggerURL: "https://appsender.skynet.io/api/appStatus"
     }
 
+    const balanceInWei = await skyNode.dripRateManager.estimateBalance([contractApp], balance);
+
+    if (!balanceInWei.success) {
+        return {
+            success: false,
+            data: new Error(balanceInWei.data.toString())
+        };
+    }
+
     const createAppResponse = await skyNode.appManager.createApp(
         contractApp,
         subscriptionParam,
         dripRateFactors,
-        [balance],
+        [balanceInWei.data.subnetBalances[0]],
         appPayload,
         appModifier,
         async (status) => {
@@ -111,7 +129,7 @@ export const createApp = async (projectId: string, appName: string, dockerImageN
     if (createAppResponse.success) {
         return {
             success: true,
-            data: `https://${appName}-n${projectId}.stackos.io`
+            data: `https://${appName}-n${projectId.data}.stackos.io`
         };
     }
     return {
@@ -119,3 +137,33 @@ export const createApp = async (projectId: string, appName: string, dockerImageN
         data: new Error(createAppResponse.data.toString())
     };
 }
+
+const mintProject = async (): Promise<APICallReturn<string>> => {
+    const skyNode: SkyMainNodeJS = await getSkyNode();
+    const tx = await skyNode.contractService.AppNFTMinter.mint(process.env.OPERATOR_PUBLIC_KEY!, {
+        value: ethers.utils.parseUnits("200", 'gwei')
+    });
+    if (tx) {
+        const ProjectId = await getProjectID();
+        console.log('Project id', ProjectId);
+        return {
+            success: true,
+            data: ProjectId.toString()
+        }
+    }
+    return {
+        success: false,
+        data: new Error("Failed to mint Project")
+    }
+}
+
+const getProjectID = async () => {
+    try {
+        const skyNode: SkyMainNodeJS = await getSkyNode();
+        const balanceOf = await skyNode.contractService.AppNFT.balanceOf(process.env.OPERATOR_PUBLIC_KEY!);
+        const ProjectId = await skyNode.contractService.AppNFT.tokenOfOwnerByIndex(process.env.OPERATOR_PUBLIC_KEY!, parseInt(balanceOf) - 1);
+        return ProjectId;
+    } catch (error) {
+        return 0;
+    }
+};

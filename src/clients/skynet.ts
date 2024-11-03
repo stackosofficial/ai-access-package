@@ -20,58 +20,6 @@ const initializeSkyNodeCrypto = async (): Promise<SkyMainNodeJS> => {
         };
         initializedAppCrypto = new SkyMainNodeJS(envConfig);
         await initializedAppCrypto.init(true);
-        initializedAppCrypto.appManager.contractCall.createApp = async (
-            nftID: string,
-            appName: string,
-            path: [string, string],
-            subnetList: string[],
-            appSubnetConfig: AppSubnetConfig[],
-            subnetBalances: string[],
-            cidLock: boolean
-        ) => {
-            const result = await initializedAppCrypto.contractService.callContractWrite(
-                initializedAppCrypto.contractService.AppDeployment.createApp(
-                    nftID,
-                    appName,
-                    path,
-                    subnetList,
-                    appSubnetConfig,
-                    subnetBalances,
-                    cidLock
-                )
-            );
-            console.log("createApp Result", result);
-
-            return result;
-        }
-
-        initializedAppCrypto.appManager.contractCall.subscribeAndCreateApp = async (
-            nftID: string,
-            rlsAddresses: [string, string, string, string],
-            licenseFactor: [number, number],
-            appName: string,
-            path: [string, string],
-            subnetList: string[],
-            appSubnetConfig: AppSubnetConfig[],
-            subnetBalances: string[],
-            cidLock: boolean
-        ) => {
-            const result = await initializedAppCrypto.contractService.callContractWrite(
-                initializedAppCrypto.contractService.AppDeployment.subscribeAndCreateApp(
-                    nftID,
-                    rlsAddresses,
-                    licenseFactor,
-                    appName,
-                    path,
-                    subnetList,
-                    appSubnetConfig,
-                    subnetBalances,
-                    cidLock
-                )
-            );
-            console.log("subscribeAndCreateApp Result", result);
-            return result;
-        }
     }
     return initializedAppCrypto;
 };
