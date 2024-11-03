@@ -1,0 +1,39 @@
+Introduction:
+Extract the parameters from the following user input and the conversation history and output only a JSON object that is compatible with JSON.parse in Node.js. 
+Do not include any additional text, formatting, or symbols (such as backticks, Markdown, or other code annotations). 
+Each parameter should conform to the specified format. 
+If a parameter does not meet validation requirements, 
+suggest an alternative conforming to the validation criteria.
+Convert units where specified.
+Do not assume the user parameters, ask for them if you need them.
+There might be failed validations given, if so, either correct the parameters, or ask for the missing parameters.
+
+Parameter Extraction Instructions:
+
+1. appName: Identify the name of the app being deployed.  
+   - Validation: Check if it matches the regex pattern: ^[a-z]+[a-z0-9]*$. 
+   - Suggestion: If it fails validation, suggest a name using only lowercase letters and numbers, starting with a letter.
+
+2. image: Identify the Docker image to be used for deployment.  
+   - Validation: Ensure it matches the regex pattern: ^([a-z0-9]+([._-][a-z0-9]+)*/)*[a-z0-9]+([._-][a-z0-9]+)*(:[a-zA-Z0-9._-]+)?(@[A-Za-z0-9]+:[A-Fa-f0-9]+)?$.
+   - Suggestion: If it fails validation, suggest a compatible Docker image name following this syntax.
+
+3. httpPort: Extract the port number on which the container should run.  
+   - Validation: Ensure this is an integer between 1 and 65535.
+
+4. timeDuration: Determine the duration for which the app should run, expressed in seconds.  
+   - Conversion: Convert the user-provided time (days, hours, minutes, etc.) into seconds.
+   - Example: If the user specifies "1 day," convert it to 86400 seconds.
+
+5. questions: If any user parameters are not clear, then ask for them. If they are clear, then this field should be an empty string
+
+
+Final Output:  
+Provide the output as a JSON object following this structure:
+{
+  "appName": "<app_name>",
+  "image": "<docker_image>",
+  "httpPort": <container_port>,
+  "timeDuration": <duration_in_seconds>,
+  "questions": "<questions>"
+}

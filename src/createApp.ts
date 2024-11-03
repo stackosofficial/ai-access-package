@@ -6,8 +6,10 @@ import { ContractApp } from "@decloudlabs/skynet/lib/types/types";
 import { getSkyNode } from "./clients/skynet";
 import { ethers } from "ethers";
 
-export const createApp = async (appName: string, dockerImageName: string, dockerTag: string, containerPort: number, resourceType: number[], resourceCount: number[], multiplier: number[], balance: number, environmentVariables: CreateAppEnvVariables[] = []): Promise<APICallReturn<string>> => {
+export const createApp = async (appName: string, dockerImageName: string, containerPort: number, resourceType: number[], resourceCount: number[], multiplier: number[], balance: number, environmentVariables: CreateAppEnvVariables[] = []): Promise<APICallReturn<string>> => {
     const skyNode: SkyMainNodeJS = await getSkyNode();
+
+    console.log("createApp: ", appName, dockerImageName, containerPort, resourceType, resourceCount, multiplier, balance, environmentVariables);
 
     const projectId = await mintProject();
     if (!projectId.success) {
@@ -68,7 +70,8 @@ export const createApp = async (appName: string, dockerImageName: string, docker
         containers: [
             {
                 name: `${appName}`,
-                image: `${dockerImageName}:${dockerTag}`,
+                // image: `${dockerImageName}:${dockerTag}`,
+                image: `${dockerImageName}`,
                 tcpPorts: [],
                 httpPorts: [
                     {
@@ -123,7 +126,7 @@ export const createApp = async (appName: string, dockerImageName: string, docker
         async (status) => {
             console.log('status', status);
         },
-        { fetchAppList: true, fetchSubscriptionParam: true, fetchBalanceForSubscription: true, getDeploymentStatus: false }
+        { fetchAppList: true, fetchSubscriptionParam: true, fetchBalanceForSubscription: true, getDeploymentStatus: true }
     );
 
     if (createAppResponse.success) {
