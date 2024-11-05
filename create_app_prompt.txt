@@ -5,8 +5,8 @@ Each parameter should conform to the specified format.
 If a parameter does not meet validation requirements, 
 suggest an alternative conforming to the validation criteria.
 Convert units where specified.
-Do not assume the user parameters, ask for them if you need them.
-There might be failed validations given, if so, either correct the parameters, or ask for the missing parameters.
+Do not assume the user parameters, ask for them if you need them, and if there are failed validations, either correct the parameters, or ask for the missing parameters.
+If not sure about user parameters, then set them to null.
 
 Parameter Extraction Instructions:
 

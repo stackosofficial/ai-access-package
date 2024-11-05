@@ -6,9 +6,7 @@ import { ContractApp } from "@decloudlabs/skynet/lib/types/types";
 import { getSkyNode } from "./clients/skynet";
 import { ethers } from "ethers";
 
-export const createApp = async (appName: string, dockerImageName: string, containerPort: number, resourceType: number[], resourceCount: number[], multiplier: number[], balance: number, environmentVariables: CreateAppEnvVariables[] = []): Promise<APICallReturn<string>> => {
-    const skyNode: SkyMainNodeJS = await getSkyNode();
-
+export const createApp = async (skyNode: SkyMainNodeJS, appName: string, dockerImageName: string, containerPort: number, resourceType: number[], resourceCount: number[], multiplier: number[], balance: number, environmentVariables: CreateAppEnvVariables[] = []): Promise<APICallReturn<string>> => {
     console.log("createApp: ", appName, dockerImageName, containerPort, resourceType, resourceCount, multiplier, balance, environmentVariables);
 
     const projectId = await mintProject();
