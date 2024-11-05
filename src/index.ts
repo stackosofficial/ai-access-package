@@ -24,32 +24,32 @@ app.use(bodyParser.json());
 app.use(cors());
 
 
-const validateParams = (params: any): {[index: string]: string} => {
-  let validationObject: {[index: string]: string} = {};
+const validateParams = (params: any): { [index: string]: string } => {
+  let validationObject: { [index: string]: string } = {};
   // let validationString = "";
-  if(params.appName == null) {
+  if (params.appName == null) {
     // validationString += "appName is required\n";
     validationObject['appName'] = "appName is required";
   }
   else {
-    if(params.appName.length > 32) {
+    if (params.appName.length > 32) {
       validationObject['appName'] = "appName should not exceed more than 32 bytes";
     }
-    if(!params.appName.match(/^[a-z]+[a-z0-9]*$/)) {
+    if (!params.appName.match(/^[a-z]+[a-z0-9]*$/)) {
       validationObject['appName'] = "appName should only contain alphabets and numbers";
     }
   }
 
-  if(params.httpPort == null) {
-    if(params.httpPort < 1 || params.httpPort > 65535) {
+  if (params.httpPort == null) {
+    if (params.httpPort < 1 || params.httpPort > 65535) {
       validationObject['httpPort'] = "httpPort should be between 1 and 65535";
     }
   }
-  if(params.image == null) {
+  if (params.image == null) {
     validationObject['image'] = "image is required";
   }
   else {
-    if(!params.image.match("^([a-z0-9]+([._-][a-z0-9]+)*/)*[a-z0-9]+([._-][a-z0-9]+)*(:[a-zA-Z0-9._-]+)?(@[A-Za-z0-9]+:[A-Fa-f0-9]+)?$")) {
+    if (!params.image.match("^([a-z0-9]+([._-][a-z0-9]+)*/)*[a-z0-9]+([._-][a-z0-9]+)*(:[a-zA-Z0-9._-]+)?(@[A-Za-z0-9]+:[A-Fa-f0-9]+)?$")) {
       validationObject['image'] = "image is of invalid format";
     }
   }
@@ -57,13 +57,13 @@ const validateParams = (params: any): {[index: string]: string} => {
   return validationObject;
 }
 
-const checkForEmptyParams = (params: any, parameters: {[index: string]: string}[]) => {
-  let validationString = ''; 
-  
-  for(let i = 0; i < parameters.length; i++) {
+const checkForEmptyParams = (params: any, parameters: { [index: string]: string }[]) => {
+  let validationString = '';
+
+  for (let i = 0; i < parameters.length; i++) {
     const key = Object.keys(parameters[i])[0];
     console.log("key: ", key, params[key])
-    if(params[key] === null || params[key] === undefined || params[key] === '' || params[key] === 'null') {
+    if (params[key] === null || params[key] === undefined || params[key] === '' || params[key] === 'null') {
       validationString += `${key}\n`;
     }
   }
@@ -115,7 +115,7 @@ const checkForEmptyParams = (params: any, parameters: {[index: string]: string}[
 //   attribVarList?: AttribVariableParam[];
 // }
 
-const parameters: {[index: string]: string}[] = [
+const parameters: { [index: string]: string }[] = [
   // {
   //   'appName': "name for the app, required if not provided generate an app name, if validation fails then generate another name"
   // },
@@ -140,7 +140,7 @@ const parameters: {[index: string]: string}[] = [
 ]
 
 // protect, checkBalance, 
-app.post('/natural-request', async (req, res) => {
+app.post('/natural-request', protect, checkBalance, async (req, res) => {
   try {
     const { prompt } = req.body;
 
@@ -148,10 +148,10 @@ app.post('/natural-request', async (req, res) => {
     const systemPrompt = systemPromptBuffer.toString();
 
     let tryCount = 0;
-    let validations:  string = "";
+    let validations: string = "";
     let currentParameters = parameters;
     let finalParams: any;
-    while(tryCount < 1) {
+    while (tryCount < 1) {
 
       // appName : name for the app, required if not provided generate an app name,
       // image : image to use, required if not provided pass null,
@@ -176,56 +176,62 @@ app.post('/natural-request', async (req, res) => {
           content: prompt + `${validations.length > 0 ? `\n\Validations are failing: ${validations}` : ''}`
         }
       ];
-//            question: If any parameters are not clear, then ask for them. If they are clear, then this field should be an empty string"    
+      //            question: If any parameters are not clear, then ask for them. If they are clear, then this field should be an empty string"    
 
       console.log("messages: ", messages)
-    const completion = await openai.chat.completions.create({
-      messages: messages as ChatCompletionMessageParam[],
-      model: "gpt-4o-mini",
-      temperature: 0.2,
-      response_format: { type: "json_object" }
-    });
+      const completion = await openai.chat.completions.create({
+        messages: messages as ChatCompletionMessageParam[],
+        model: "gpt-4o-mini",
+        temperature: 0.2,
+        response_format: { type: "json_object" }
+      });
 
-    const content = completion.choices[0].message.content || '';
-    console.log("content: ", content)
+      const content = completion.choices[0].message.content || '';
+      console.log("content: ", content)
 
 
-    const extractedParams = JSON.parse(content);
+      const extractedParams = JSON.parse(content);
 
-    extractedParams.appName = "app1"
+      extractedParams.appName = "app1"
 
-    validations = checkForEmptyParams(extractedParams, parameters);
-    // if(extractedParams.question) {
-    //   let questions = extractedParams.question;
-    //   delete extractedParams.question;
-    //   const response = `These are the parameters I have: ${JSON.stringify(extractedParams)}. The following parameters are missing: ${questions}.`;
-    //   res.send(response);
-    //   return;
-    // }
+      validations = checkForEmptyParams(extractedParams, parameters);
+      // if(extractedParams.question) {
+      //   let questions = extractedParams.question;
+      //   delete extractedParams.question;
+      //   const response = `These are the parameters I have: ${JSON.stringify(extractedParams)}. The following parameters are missing: ${questions}.`;
+      //   res.send(response);
+      //   return;
+      // }
 
- 
 
-    finalParams = extractedParams;
-    finalParams.validations = validations;
 
-    if(validations.length > 0) {
-      res.send("Please provide the missing parameters:\n "+ validations);
-      return;
+      finalParams = extractedParams;
+      finalParams.validations = validations;
+
+      if (validations.length > 0) {
+        res.send({
+          "status": "error",
+          "message": "Please provide the missing parameters:\n " + validations
+        });
+        return;
+      }
+
+
+      tryCount++;
     }
 
 
-    tryCount++;
-  }
+    const basicCPU = 128;
+    const basicMemory = 2000;
+    let resourceCount = [Math.max(finalParams.replicaCount / basicMemory, finalParams.resourceCpu / basicCPU)];
+    let resourceType = [0];
 
+    const response = await createApp(finalParams.appName, finalParams.image, finalParams.httpPort, resourceType, resourceCount, [finalParams.replicaCount], finalParams.timeDuration, []);
 
-  const basicCPU = 128;
-  const basicMemory = 2000;
-  let resourceCount = [Math.max(finalParams.replicaCount / basicMemory, finalParams.resourceCpu / basicCPU)];
-  let resourceType = [0];
-  
-  const response = await createApp(finalParams.appName, finalParams.image, finalParams.httpPort, resourceType, resourceCount, [finalParams.replicaCount], finalParams.timeDuration, []);
-
-    res.send("done: "+ JSON.stringify(response.data))
+    res.send({
+      "status": "success",
+      "message": JSON.stringify(response.data)
+    })
 
   } catch (error) {
     console.error('Error:', error);
