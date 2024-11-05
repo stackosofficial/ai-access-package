@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import { getSkyNode } from "../clients/skynet";
+import { getSkyNode } from "../init";
 import { ETHAddress, SkyContractService } from "@decloudlabs/skynet/lib/types/types";
 import dotenv from "dotenv";
 
@@ -15,10 +15,11 @@ export const checkBalance = async (req: Request, res: Response, next: NextFuncti
 
         const { message, signature, userAddress } = userAuthPayload;
 
+        console.log("nftId: ", nftId)
         if (!nftId) {
             return res.json({
                 success: false,
-                data: new Error("Not authorized to access this route"),
+                data: new Error("Not authorized to access this route").toString(),
             });
         }
 
@@ -46,7 +47,7 @@ export const checkBalance = async (req: Request, res: Response, next: NextFuncti
             if (!hasReadRoleResp && !hasDeployerRoleResp) {
                 return res.json({
                     success: false,
-                    data: new Error("Not authorized to access this route"),
+                    data: new Error("Not authorized to access this route").toString(),
                 });
             }
         }
@@ -58,7 +59,7 @@ export const checkBalance = async (req: Request, res: Response, next: NextFuncti
         if (!appList.success) {
             return res.json({
                 success: false,
-                data: new Error("Not enough balance"),
+                data: new Error("Not enough balance").toString(),
             });
         }
         console.log("app List", appList.data);
@@ -69,32 +70,32 @@ export const checkBalance = async (req: Request, res: Response, next: NextFuncti
                 } else {
                     return res.json({
                         success: false,
-                        data: new Error("Not enough balance"),
+                        data: new Error("Not enough balance").toString(),
                     });
                 }
             }
         }
         return res.json({
             success: false,
-            data: new Error("No valid subscription found"),
+            data: new Error("No valid subscription found").toString(),
         });
     } catch (err: any) {
         const error: Error = err;
         return res.json({
             success: false,
-            data: error,
+            data: error.toString(),
         });
     }
 };
 
 const hasRole = async (
-    nftID: string,
+    nftId: string,
     roleValue: string,
     requester: ETHAddress,
     contractService: SkyContractService
 ) => {
     const result = await contractService.callContractRead<boolean, boolean>(
-        contractService.AppNFT.hasRole(nftID, roleValue, requester),
+        contractService.AppNFT.hasRole(nftId, roleValue, requester),
         (res) => res
     );
     return result;

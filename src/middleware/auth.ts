@@ -21,7 +21,7 @@ export const protect = async (req: Request, res: Response, next: NextFunction) =
         if (isSignatureExpired(Number(timestamp))) {
             return res.json({
                 success: false,
-                data: new Error("Signature expired"),
+                data: new Error("Signature expired").toString(),
             });
         }
         const extractedAddress = ethers.utils.verifyMessage(
@@ -32,7 +32,7 @@ export const protect = async (req: Request, res: Response, next: NextFunction) =
         if (userAddress.toLowerCase() !== extractedAddress.toLowerCase()) {
             return res.json({
                 success: false,
-                data: new Error("Signature is invalid"),
+                data: new Error("Signature is invalid").toString(),
             });
         }
 
@@ -41,7 +41,7 @@ export const protect = async (req: Request, res: Response, next: NextFunction) =
         const error: Error = err;
         return res.json({
             success: false,
-            data: error,
+            data: error.toString(),
         });
     }
 };
