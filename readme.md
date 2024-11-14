@@ -102,8 +102,35 @@ The `sky-ai-accesspoint` package includes essential middleware for security and 
 To apply the middleware in your routes:
 
 ```typescript
-app.post('/your-protected-route', protect, checkBalance, (req, res) => {
-    // Handle request here
+app.post('/natural-request', protect, checkBalance, async (req, res, next) => {
+    try {
+        // Input validation
+        const { prompt, nftId, userAuthPayload } = req.body;
+        
+        if (!prompt || !nftId || !userAuthPayload) {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing required fields',
+                requiredFields: ['prompt', 'nftId', 'userAuthPayload']
+            });
+        }
+
+        // Process your logic here
+        const result = await processRequest({ prompt, nftId, userAuthPayload });
+
+        // Send response
+        return res.status(200).json({
+            success: true,
+            data: {
+                message: 'Request processed successfully',
+                data: result.data
+            }
+        });
+    } catch (error) {
+        // Error handling
+        console.error('Route error:', error);
+        return next(new Error('Failed to process request'));
+    }
 });
 ```
 
