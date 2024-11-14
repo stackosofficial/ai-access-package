@@ -1,18 +1,19 @@
 {
   "name": "@decloudlabs/sky-ai-accesspoint",
-  "version": "0.0.1",
+  "version": "0.0.32",
   "description": "StackAI API",
   "main": "dist/index.js",
   "publishConfig": {
     "access": "public"
-},
+  },
   "scripts": {
     "start": "node dist/index.js",
     "dev": "nodemon --exec ts-node src/index.ts",
     "build": "tsc"
   },
   "dependencies": {
-    "@decloudlabs/skynet": "^0.5.3",
+    "@decloudlabs/sky-cluster-operator": "^0.1.19",
+    "@decloudlabs/skynet": "^0.5.5",
     "body-parser": "^1.20.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",

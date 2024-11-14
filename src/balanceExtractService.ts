@@ -5,6 +5,8 @@ import { ethers } from 'ethers';
 import { Collection, InsertManyResult, MongoClient, UpdateResult } from 'mongodb';
 import ServerCostCalculatorABI from './ABI/ServerCostCalculator';
 import { getSkyNode } from './init';
+import { COService } from '@decloudlabs/sky-cluster-operator/lib/utils/service';
+import { DatabaseWriterExecution } from '@decloudlabs/sky-cluster-operator/lib/utils/databaseWriterExecution';
 
 interface NFTCosts {
     nftID: string;
@@ -12,12 +14,34 @@ interface NFTCosts {
   }
   
 let nftCostsCollection: Collection<NFTCosts>;
-let NFT_UPDATE_INTERVAL = 30000;
+let NFT_UPDATE_INTERVAL = 60 * 60 * 1000;
 let batchSize = 100;
 
 
-export const setupDatabase = async () => {
-    // const { MONGODB_URL, MONGODB_DBNAME } = process.env;
+export default class balanceExtractService implements COService {
+
+  databaseWriter: DatabaseWriterExecution<NFTCosts[]>;
+  nftCostsToWriteList: NFTCosts[];
+
+  constructor() {
+    this.nftCostsToWriteList = [];
+    this.databaseWriter = new DatabaseWriterExecution<NFTCosts[]>(
+      "nftCostsWriter",
+      this.scanNFTBalancesInternal,
+      this.addNFTCostsToWrite,
+      NFT_UPDATE_INTERVAL,
+    );
+  }
+
+  addNFTCostsToWriteInternal = (nftCosts: NFTCosts[]) => {
+    this.nftCostsToWriteList = [...this.nftCostsToWriteList, ...nftCosts];
+  };
+
+  addNFTCostsToWrite = async (nftCosts: NFTCosts[]) => {
+      await this.databaseWriter.insert(nftCosts);
+  };
+  
+  setupDatabase = async () => {
     const MONGODB_URL = process.env.MONGODB_URL || '';
     const MONGODB_DBNAME = process.env.MONGODB_DBNAME || '';
   
@@ -26,10 +50,49 @@ export const setupDatabase = async () => {
   
     const database = client.db(MONGODB_DBNAME);
     console.log(`connected to database: ${MONGODB_DBNAME}`);
+
+    const collectionName = process.env.MONGODB_COLLECTION_NAME || '';
+
+    console.log("checking mongodb cred:", MONGODB_URL, MONGODB_DBNAME, collectionName);
   
-    nftCostsCollection = database.collection<NFTCosts>("nftCosts");
+    nftCostsCollection = database.collection<NFTCosts>(collectionName);
   }
-  
+
+  scanNFTBalancesInternal = async () => {
+    try {
+        const balances = await nftCostsCollection.find({}).toArray();
+        console.log(balances);
+
+        const cursor = nftCostsCollection.find<NFTCosts>({
+        });
+
+        cursor.batchSize(batchSize);
+
+        for await (const nftCosts of cursor) {
+            if(nftCosts.costs !== '0') {
+                const resp = await addCostToContract( nftCosts.nftID, nftCosts.costs);
+                if(resp.success) {
+                await setBalance(nftCosts.nftID, '0');
+                }
+
+                await updateBalanceInContract(nftCosts.nftID);
+            }
+        }
+
+    }
+    catch(error) {
+        console.error(error);
+    }
+  }
+
+  setup = async () => {
+    await this.setupDatabase();
+  }
+
+  update = async () => {
+    await this.databaseWriter.execute();
+  }
+}
 
  const setBalance = async (nftID: string, price: string): Promise<APICallReturn<number>> => {
     const result = await apiCallWrapper<
@@ -75,7 +138,8 @@ export const setupDatabase = async () => {
     }
   }
 
-  const addCostToContract = async (skyNode: SkyMainNodeJS, nftID: string, price: string) => {
+  const addCostToContract = async (nftID: string, price: string) => {
+    const skyNode: SkyMainNodeJS = getSkyNode();
     const address = '0x099B69911207bE7a2A18C2a2878F9b267838e388';
     const subnetID = process.env.SUBNET_ID || '';
     const abi = ServerCostCalculatorABI;
@@ -105,32 +169,4 @@ export const setupDatabase = async () => {
     return resp;
   }
 
-export const scanNFTBalances = async (skyNode: SkyMainNodeJS) => {
-    while(true) {
-        try {
-            const balances = await nftCostsCollection.find({}).toArray();
-            console.log(balances);
 
-            const cursor = nftCostsCollection.find<NFTCosts>({
-            });
-    
-            cursor.batchSize(batchSize);
-
-            for await (const nftCosts of cursor) {
-                if(nftCosts.costs !== '0') {
-                    const resp = await addCostToContract(skyNode, nftCosts.nftID, nftCosts.costs);
-                    if(resp.success) {
-                    await setBalance(nftCosts.nftID, '0');
-                    }
-
-                    await updateBalanceInContract(nftCosts.nftID);
-                }
-            }
-    
-        }
-        catch(error) {
-            console.error(error);
-        }
-        await new Promise(resolve => setTimeout(resolve, NFT_UPDATE_INTERVAL));
-    }
-}
