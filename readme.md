@@ -1,4 +1,3 @@
-
 # Skynet AI Access Point (`sky-ai-accesspoint`)
 
 The `sky-ai-accesspoint` package is designed to manage AI-related operations with integrated service control, cost management, and secure access. It connects to Skynet’s AI infrastructure, providing a streamlined interface for executing AI-driven requests, handling service states, and managing balance requirements.
@@ -199,6 +198,9 @@ const runNaturalFunction = async (req: Request, res: Response, runMain: BalanceR
 The following endpoints are set up within `initAIAccessPoint`:
 
 - **`POST /natural-request`**: Processes a natural language request and returns a response based on extracted parameters. This endpoint uses `runNaturalFunction` to interpret and execute various AI tasks.
+
+
+Example usage can be found in this repository: [@stackosofficial/skynet_accesspoint_example](https://github.com/stackosofficial/skynet_accesspoint_example)
 
 --- 
 
