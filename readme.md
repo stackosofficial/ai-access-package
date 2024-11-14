@@ -92,49 +92,7 @@ setupAccessPoint();
 
 The `initAIAccessPoint` function sets up the necessary routes and middleware, allowing you to securely manage AI access while enforcing balance checks and service control.
 
-### 4. Middleware Overview
-
-The `sky-ai-accesspoint` package includes essential middleware for security and balance management:
-
-- **`protect`**: Authenticates requests, ensuring only authorized users can access protected routes.
-- **`checkBalance`**: Checks if the user has a sufficient balance for the requested AI operation.
-
-To apply the middleware in your routes:
-
-```typescript
-app.post('/natural-request', protect, checkBalance, async (req, res, next) => {
-    try {
-        // Input validation
-        const { prompt, nftId, userAuthPayload } = req.body;
-        
-        if (!prompt || !nftId || !userAuthPayload) {
-            return res.status(400).json({
-                success: false,
-                error: 'Missing required fields',
-                requiredFields: ['prompt', 'nftId', 'userAuthPayload']
-            });
-        }
-
-        // Process your logic here
-        const result = await processRequest({ prompt, nftId, userAuthPayload });
-
-        // Send response
-        return res.status(200).json({
-            success: true,
-            data: {
-                message: 'Request processed successfully',
-                data: result.data
-            }
-        });
-    } catch (error) {
-        // Error handling
-        console.error('Route error:', error);
-        return next(new Error('Failed to process request'));
-    }
-});
-```
-
-### 5. Core Functions
+### 4. Core Functions
 
 Here’s an overview of the main functions required for `initAIAccessPoint`:
 
@@ -236,7 +194,7 @@ const runNaturalFunction = async (req: Request, res: Response, runMain: BalanceR
 };
 ```
 
-### 6. Endpoint Summary
+### 5. Endpoint Summary
 
 The following endpoints are set up within `initAIAccessPoint`:
 
