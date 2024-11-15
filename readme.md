@@ -48,7 +48,6 @@ The public wallet address of the cluster operator, typically used in decentraliz
 ## 8. `PORT`
 Specifies the port number on which the application server listens, directing incoming requests to the correct application service.
 
-Additional MongoDB connection details may be required if storing balance and session data.
 
 ### 3. Initialization and Setup
 

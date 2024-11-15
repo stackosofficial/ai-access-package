@@ -1,6 +1,6 @@
 {
   "name": "@decloudlabs/sky-ai-accesspoint",
-  "version": "0.0.32",
+  "version": "0.0.33",
   "description": "StackAI API",
   "main": "dist/index.js",
   "publishConfig": {
