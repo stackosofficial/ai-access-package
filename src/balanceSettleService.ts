@@ -18,7 +18,7 @@ const initializeSkyNodeCrypto = async (): Promise<SkyMainNodeJS> => {
     if (!initializedAppCrypto) {
         const envConfig: SkyEnvConfigNodeJS = {
             JRPC_PROVIDER: process.env.JSON_RPC_PROVIDER!,
-            WALLET_PRIVATE_KEY: process.env.CLUSTER_OPERATOR_PRIVATE_KEY!,
+            WALLET_PRIVATE_KEY: process.env.ACCESSPOINT_PRIVATE_KEY!,
             STORAGE_API: {}
         };
         initializedAppCrypto = new SkyMainNodeJS(envConfig);

@@ -40,10 +40,10 @@ Defines the name of the collection within the database where data records are st
 ## 5. `JSON_RPC_URL`
 The endpoint URL for accessing a JSON-RPC service, commonly used in blockchain networks to interact with decentralized applications or perform various RPC calls.
 
-## 6. `CLUSTER_OPERATOR_PRIVATE_KEY`
+## 6. `ACCESSPOINT_PRIVATE_KEY`
 A sensitive private key used for authenticating and signing actions performed by a cluster operator; it should be securely stored to prevent unauthorized access.
 
-## 7. `CLUSTER_OPERATOR_WALLET_ADDRESS`
+## 7. `ACCESSPOINT_WALLET_ADDRESS`
 The public wallet address of the cluster operator, typically used in decentralized environments to receive and manage tokens or assets.
 
 ## 8. `PORT`
