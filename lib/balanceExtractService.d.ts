@@ -1,14 +1,12 @@
 import { APICallReturn } from '@decloudlabs/skynet/lib/types/types';
-import { COService } from '@decloudlabs/sky-cluster-operator/lib/utils/service';
 import { DatabaseWriterExecution } from '@decloudlabs/sky-cluster-operator/lib/utils/databaseWriterExecution';
-interface NFTCosts {
-    nftID: string;
-    costs: string;
-}
-export default class balanceExtractService implements COService {
+import { NFTCosts } from './types/types';
+import ENVConfig from './envConfig';
+export default class balanceExtractService {
     databaseWriter: DatabaseWriterExecution<NFTCosts[]>;
     nftCostsToWriteList: NFTCosts[];
-    constructor();
+    envConfig: ENVConfig;
+    constructor(envConfig: ENVConfig);
     addNFTCostsToWriteInternal: (nftCosts: NFTCosts[]) => void;
     addNFTCostsToWrite: (nftCosts: NFTCosts[]) => Promise<void>;
     setupDatabase: () => Promise<void>;
@@ -17,4 +15,3 @@ export default class balanceExtractService implements COService {
     update: () => Promise<void>;
 }
 export declare const addBalance: (nftID: string, price: string) => Promise<APICallReturn<number>>;
-export {};

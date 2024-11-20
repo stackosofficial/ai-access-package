@@ -1,4 +1,4 @@
-# Skynet AI Access Point (`sky-ai-accesspoint`)
+# Skynet AI Access Point (`Skynet-SmartAccessPoint `)
 
 The `sky-ai-accesspoint` package is designed to manage AI-related operations with integrated service control, cost management, and secure access. It connects to Skynet’s AI infrastructure, providing a streamlined interface for executing AI-driven requests, handling service states, and managing balance requirements.
 
@@ -14,10 +14,10 @@ The `sky-ai-accesspoint` package is designed to manage AI-related operations wit
 
 ### 1. Installation
 
-To install `sky-ai-accesspoint` in your project:
+To install `Skynet-SmartAccessPoint ` in your project:
 
 ```bash
-npm install @decloudlabs/sky-ai-accesspoint
+npm install @decloudlabs/Skynet-SmartAccessPoint 
 ```
 
 ### 2. Configuration
@@ -51,7 +51,7 @@ Specifies the port number on which the application server listens, directing inc
 
 ### 3. Initialization and Setup
 
-In your main application file, import and set up the `sky-ai-accesspoint` with your project’s core services.
+In your main application file, import and set up the `Skynet-SmartAccessPoint ` with your project’s core services.
 
 **Example Initialization**:
 
@@ -60,9 +60,9 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import express from 'express';
-import { initAIAccessPoint } from '@decloudlabs/sky-ai-accesspoint/lib/init';
-import { checkBalance } from '@decloudlabs/sky-ai-accesspoint/lib/middleware/checkBalance';
-import { protect } from '@decloudlabs/sky-ai-accesspoint/lib/middleware/auth';
+import { initAIAccessPoint } from '@decloudlabs/Skynet-SmartAccessPoint /lib/init';
+import { checkBalance } from '@decloudlabs/Skynet-SmartAccessPoint /lib/middleware/checkBalance';
+import { protect } from '@decloudlabs/Skynet-SmartAccessPoint /lib/middleware/auth';
 import SkyMainNodeJS from '@decloudlabs/skynet/lib/services/SkyMainNodeJS';
 import { getSkyNode } from './clients/skynet';
 
@@ -99,7 +99,7 @@ Here’s an overview of the main functions required for `initAIAccessPoint`:
 This function halts any active services associated with a given NFT ID. It identifies ongoing services and attempts to stop them, helping manage resources effectively.
 
 ```typescript
-import { NFTCosts } from '@decloudlabs/sky-ai-accesspoint/lib/types/types';
+import { NFTCosts } from '@decloudlabs/Skynet-SmartAccessPoint /lib/types/types';
 import { APICallReturn } from '@decloudlabs/sky-cluster-operator/lib/types/types';
 import { stopService } from './clients/runpod'; // Assuming `stopService` stops a specific service
 
@@ -133,7 +133,7 @@ const checkBalanceCondition = async (nftCosts: NFTCosts): Promise<APICallReturn<
 Calculates and applies the usage costs based on request parameters, which helps manage the user’s balance effectively.
 
 ```typescript
-import { NFTCosts } from '@decloudlabs/sky-ai-accesspoint/lib/types/types';
+import { NFTCosts } from '@decloudlabs/Skynet-SmartAccessPoint /lib/types/types';
 import { ethers } from 'ethers';
 
 const applyCosts = async (nftCosts: NFTCosts): Promise<APICallReturn<NFTCosts>> => {
@@ -154,7 +154,7 @@ Processes natural language requests, interprets parameters with OpenAI, and exec
 ```typescript
 import { Request, Response } from 'express';
 import OpenAI from 'openai';
-import BalanceRunMain from '@decloudlabs/sky-ai-accesspoint/lib/balanceRunMain';
+import BalanceRunMain from '@decloudlabs/Skynet-SmartAccessPoint /lib/balanceRunMain';
 
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
@@ -203,4 +203,4 @@ Example usage can be found in this repository: [@stackosofficial/skynet_accesspo
 
 --- 
 
-This documentation provides a comprehensive overview of setting up and using `sky-ai-accesspoint`, with key functions, middleware, and examples tailored to manage secure AI requests and service operations.
+This documentation provides a comprehensive overview of setting up and using `Skynet-SmartAccessPoint `, with key functions, middleware, and examples tailored to manage secure AI requests and service operations.

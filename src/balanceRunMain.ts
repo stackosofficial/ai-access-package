@@ -1,85 +1,46 @@
-import OperatorMain from "@decloudlabs/sky-cluster-operator/lib/operatorMain";
-import AppFunctions from "@decloudlabs/sky-cluster-operator/lib/services/appFunctions";
-import { APICallReturn, SystemLog } from "@decloudlabs/sky-cluster-operator/lib/types/types";
-import SkyMainNodeJS from "@decloudlabs/skynet/lib/services/SkyMainNodeJS";
+import { ENVDefinition } from "./types/types";
+import { APICallReturn } from "@decloudlabs/skynet/lib/types/types";
 import { sleep } from "@decloudlabs/skynet/lib/utils/utils";
-import { stringifyTryCatch } from "@decloudlabs/sky-cluster-operator/lib/utils/utils";
 import balanceExtractService from "./balanceExtractService";
 import BalanceSettleService from "./balanceSettleService";
 import ServerBalanceDatabaseService from "./serverBalanceDatabaseService";
 import { NFTCosts } from "./types/types";
-import { NFTEventProcessor } from "@decloudlabs/sky-cluster-operator/lib/events/eventProcessor";
-import { Web3Service } from "@decloudlabs/sky-cluster-operator/lib/config/ethersConfig";
-import { ENVConfig } from "@decloudlabs/sky-cluster-operator/lib/config/envConfig";
-import { DatabaseService } from "@decloudlabs/sky-cluster-operator/lib/services/databaseService";
-import { NFTLogService } from "@decloudlabs/sky-cluster-operator/lib/services/nftLogService";
-import { BootEventCollectService } from "@decloudlabs/sky-cluster-operator/lib/services/bootEventCollectService";
-import { SystemLogService } from "@decloudlabs/sky-cluster-operator/lib/services/systemLogService";
-import { ContractService } from "@decloudlabs/sky-cluster-operator/lib/services/contractService";
-import { EventAction, setEventAction } from "@decloudlabs/sky-cluster-operator/lib/events/eventAction";
-import { HeartBeatService } from "@decloudlabs/sky-cluster-operator/lib/services/heartBeatService";
-import { ProcessCheckService } from "@decloudlabs/sky-cluster-operator/lib/services/processCheckService";
-import { AppStatusService } from "@decloudlabs/sky-cluster-operator/lib/services/appStatusService";
-import { NFTBalanceAPIService } from "@decloudlabs/sky-cluster-operator/lib/services/nftBalanceAPIService";
-import EventFetcherService from "@decloudlabs/sky-cluster-operator/lib/services/eventFetcherService";
+import ENVConfig from "./envConfig";
 import express from "express";
 import cors from "cors";
-import { NFTEventRouter } from "@decloudlabs/sky-cluster-operator/lib/express/modules/nftEvent/nftEventRouter";
 import CostApplierService from "./CostApplierService";
+import { ethers } from "ethers";
 
-const initExpress = (operatorMain: OperatorMain) => {
-    const app = express();
-
-    const apiRouter = new NFTEventRouter(operatorMain.eventProcessor);
-
-    apiRouter.setup();
-
-    app.use(cors());
-    // body parser
-    app.use(express.json());
-
-    const PORT = process.env.PORT || 8000;
-
-    app.get("/", (req: any, res: any) => {
-        return res.status(200).send("welcome to the cluster operator service");
-    });
-
-    app.use("/api/nftevent", apiRouter.getRouter());
-
-    app.listen(PORT, () => {
-        console.log("Server listening on port ", PORT);
-    });
-};
 
 export default class BalanceRunMain {
     RUN_DURATION: number;
     nextRunTime: number;
-    web3Service: Web3Service;
-    // contractService: ContractService;
-    // eventProcessor: NFTEventProcessor;
-    // nftBalanceAPIService: NFTBalanceAPIService;
-    // databaseService: DatabaseService;
-    // nftLogService: NFTLogService;
-    // bootupEventCollectService: BootEventCollectService;
-    // systemLogService: SystemLogService;
-    // heartBeatService: HeartBeatService;
-    // processCheckService: ProcessCheckService;
-    // appStatusLogService: AppStatusService;
-    // eventAction: EventAction;
-    // eventFetcherService: EventFetcherService;
     envConfig: ENVConfig;
-    appFunctions: AppFunctions;
     balanceSettleService: BalanceSettleService;
     balanceExtractService: balanceExtractService;
     serverBalanceDatabaseService: ServerBalanceDatabaseService;
     costApplierService: CostApplierService
+    signer: ethers.Wallet;
+    jsonProvider: ethers.providers.JsonRpcProvider;
 
-    constructor(appFunctions: AppFunctions, checkBalanceCondition: (nftCosts: NFTCosts) => Promise<APICallReturn<boolean>>, applyCosts: (nftCosts: NFTCosts) => Promise<APICallReturn<NFTCosts>>, extractCostTime: number) {
+    constructor(env: ENVDefinition, checkBalanceCondition: (nftCosts: NFTCosts) => Promise<APICallReturn<boolean>>, applyCosts: (nftCosts: NFTCosts) => Promise<APICallReturn<NFTCosts>>, extractCostTime: number) {
         this.RUN_DURATION = 5000;
-        this.envConfig = new ENVConfig();
+        this.envConfig = new ENVConfig(env);
         this.nextRunTime = new Date().getTime();
-        this.appFunctions = appFunctions;
-        this.web3Service = new Web3Service(this.envConfig);
+
+
+        this.jsonProvider = new ethers.providers.JsonRpcProvider(
+            this.envConfig.env.JSON_RPC_PROVIDER,
+            undefined,
+            // option,
+        );
+        console.log("json rpc: ", this.envConfig.env.JSON_RPC_PROVIDER);
+
+        this.signer = new ethers.Wallet(
+            this.envConfig.env.WALLET_PRIVATE_KEY,
+            this.jsonProvider,
+        );
+
         // this.contractService = new ContractService(
         //     this.web3Service,
         //     this.envConfig,
@@ -136,18 +97,18 @@ export default class BalanceRunMain {
 
         this.serverBalanceDatabaseService = new ServerBalanceDatabaseService();
         this.balanceSettleService = new BalanceSettleService(
-            this.serverBalanceDatabaseService, 
-            this.envConfig, 
-            this.web3Service, 
+            this.envConfig,
+            this.serverBalanceDatabaseService,
+            this.signer, 
             checkBalanceCondition
         );
 
-        this.balanceExtractService = new balanceExtractService();
+        this.balanceExtractService = new balanceExtractService(this.envConfig);
 
         this.costApplierService = new CostApplierService(
             this.serverBalanceDatabaseService,
             this.envConfig,
-            this.web3Service,
+            this.signer,
             applyCosts,
             extractCostTime,
         );
@@ -175,7 +136,6 @@ export default class BalanceRunMain {
 
     setup = async () => {
         try {
-            this.envConfig.setupENV();
 
             // await this.systemLogService.setup();
 
@@ -207,7 +167,7 @@ export default class BalanceRunMain {
             //     `ENV: ${stringifyTryCatch(this.envConfig)}`,
             // );
 
-            const { UPDATE_DURATION } = this.envConfig.SYSTEM_ENV;
+            const UPDATE_DURATION = 10 * 1000;
             this.RUN_DURATION = UPDATE_DURATION;
 
             // await this.nftLogService.setup();

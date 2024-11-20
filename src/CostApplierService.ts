@@ -1,14 +1,12 @@
 
 import { ethers } from "ethers";
 import { getSkyNode } from "./init";
-import { DatabaseWriterExecution } from "@decloudlabs/sky-cluster-operator/lib/utils/databaseWriterExecution";
-import { ENVConfig } from "@decloudlabs/sky-cluster-operator/lib/config/envConfig";
+import { DatabaseWriterExecution } from '@decloudlabs/sky-cluster-operator/lib/utils/databaseWriterExecution';
+import ENVConfig from "./envConfig"
 import ServerCostCalculator from "./ABI/ServerCostCalculator";
-import { Web3Service } from "@decloudlabs/sky-cluster-operator/lib/config/ethersConfig";
-import { DatabaseService } from "@decloudlabs/sky-cluster-operator/lib/services/databaseService";
 import ServerBalanceDatabaseService from "./serverBalanceDatabaseService";
 import { NFTCosts } from "./types/types";
-import { APICallReturn } from "@decloudlabs/sky-cluster-operator/lib/types/types";
+import { APICallReturn } from "@decloudlabs/skynet/lib/types/types";
 
 export default class CostApplierService {
     databaseService: ServerBalanceDatabaseService;
@@ -18,12 +16,12 @@ export default class CostApplierService {
     applyCosts: (nftCosts: NFTCosts) => Promise<APICallReturn<NFTCosts>>;
 
 
-    constructor(databaseService: ServerBalanceDatabaseService, envConfig: ENVConfig, web3Service: Web3Service, applyCosts: (nftCosts: NFTCosts) => Promise<APICallReturn<NFTCosts>>, extractCostTime: number) {
+    constructor(databaseService: ServerBalanceDatabaseService, envConfig: ENVConfig, signer: ethers.Wallet, applyCosts: (nftCosts: NFTCosts) => Promise<APICallReturn<NFTCosts>>, extractCostTime: number) {
         this.databaseService = databaseService;
         this.envConfig = envConfig;
-        this.serverCostCalculator = new ethers.Contract("0x099B69911207bE7a2A18C2a2878F9b267838e388", ServerCostCalculator, web3Service.signer);
+        this.serverCostCalculator = new ethers.Contract(signer.address, ServerCostCalculator, signer);
         this.shortTermDatabaseWriter = new DatabaseWriterExecution<NFTCosts>(
-            "shortTermNFTTracker",
+            "CostApplierService",
             this.scanShortTermBalances,
             this.addShortTermTrackerInternal,
             extractCostTime,

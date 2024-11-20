@@ -5,25 +5,22 @@ import { ethers } from 'ethers';
 import { Collection, InsertManyResult, MongoClient, UpdateResult } from 'mongodb';
 import ServerCostCalculatorABI from './ABI/ServerCostCalculator';
 import { getSkyNode } from './init';
-import { COService } from '@decloudlabs/sky-cluster-operator/lib/utils/service';
 import { DatabaseWriterExecution } from '@decloudlabs/sky-cluster-operator/lib/utils/databaseWriterExecution';
-
-interface NFTCosts {
-    nftID: string;
-    costs: string;
-  }
+import { NFTCosts } from './types/types';
+import ENVConfig from './envConfig';
   
 let nftCostsCollection: Collection<NFTCosts>;
 let NFT_UPDATE_INTERVAL = 60 * 60 * 1000;
 let batchSize = 100;
 
 
-export default class balanceExtractService implements COService {
+export default class balanceExtractService {
 
   databaseWriter: DatabaseWriterExecution<NFTCosts[]>;
   nftCostsToWriteList: NFTCosts[];
+  envConfig: ENVConfig;
 
-  constructor() {
+  constructor(envConfig: ENVConfig) {
     this.nftCostsToWriteList = [];
     this.databaseWriter = new DatabaseWriterExecution<NFTCosts[]>(
       "nftCostsWriter",
@@ -31,6 +28,7 @@ export default class balanceExtractService implements COService {
       this.addNFTCostsToWrite,
       NFT_UPDATE_INTERVAL,
     );
+    this.envConfig = envConfig;
   }
 
   addNFTCostsToWriteInternal = (nftCosts: NFTCosts[]) => {
@@ -42,8 +40,8 @@ export default class balanceExtractService implements COService {
   };
   
   setupDatabase = async () => {
-    const MONGODB_URL = process.env.MONGODB_URL || '';
-    const MONGODB_DBNAME = process.env.MONGODB_DBNAME || '';
+    const MONGODB_URL = this.envConfig.env.MONGODB_URL || '';
+    const MONGODB_DBNAME = this.envConfig.env.MONGODB_DBNAME || '';
   
     const client = await MongoClient.connect(MONGODB_URL);
     console.log(`created database client: ${MONGODB_URL}`);
@@ -51,7 +49,7 @@ export default class balanceExtractService implements COService {
     const database = client.db(MONGODB_DBNAME);
     console.log(`connected to database: ${MONGODB_DBNAME}`);
 
-    const collectionName = process.env.MONGODB_COLLECTION_NAME || '';
+    const collectionName = this.envConfig.env.MONGODB_COLLECTION_NAME || '';
 
     console.log("checking mongodb cred:", MONGODB_URL, MONGODB_DBNAME, collectionName);
   
@@ -70,12 +68,12 @@ export default class balanceExtractService implements COService {
 
         for await (const nftCosts of cursor) {
             if(nftCosts.costs !== '0') {
-                const resp = await addCostToContract( nftCosts.nftID, nftCosts.costs);
+                const resp = await addCostToContract( nftCosts.nftID, nftCosts.costs, this.envConfig);
                 if(resp.success) {
                 await setBalance(nftCosts.nftID, '0');
                 }
 
-                await updateBalanceInContract(nftCosts.nftID);
+                await updateBalanceInContract(nftCosts.nftID, this.envConfig);
             }
         }
 
@@ -138,14 +136,14 @@ export default class balanceExtractService implements COService {
     }
   }
 
-  const addCostToContract = async (nftID: string, price: string) => {
+  const addCostToContract = async (nftID: string, price: string, envConfig: ENVConfig) => {
     const skyNode: SkyMainNodeJS = getSkyNode();
     const address = '0x099B69911207bE7a2A18C2a2878F9b267838e388';
-    const subnetID = process.env.SUBNET_ID || '';
+    const subnetID = envConfig.env.SUBNET_ID || '';
     const abi = ServerCostCalculatorABI;
   
-    const provider = new ethers.providers.JsonRpcProvider(process.env.PROVIDER_RPC);
-    const wallet = new ethers.Wallet(process.env.OPERATOR_PRIVATE_KEY || '', provider);
+    const provider = new ethers.providers.JsonRpcProvider(envConfig.env.JSON_RPC_PROVIDER);
+    const wallet = new ethers.Wallet(envConfig.env.WALLET_PRIVATE_KEY || '', provider);
     const serverCostCalculator = new ethers.Contract(address, abi, wallet);
   
     const response = await skyNode.contractService.callContractWrite(serverCostCalculator.addNFTCosts(
@@ -159,9 +157,9 @@ export default class balanceExtractService implements COService {
     return response;
   }
 
-  const updateBalanceInContract = async (nftID: string) => {
+  const updateBalanceInContract = async (nftID: string, envConfig: ENVConfig) => {
     const skyNode = getSkyNode();
-    const subnetID = process.env.SUBNET_ID || '';
+    const subnetID = envConfig.env.SUBNET_ID || '';
     const resp = await skyNode.contractService.callContractWrite(skyNode.contractService.SubscriptionBalance.updateBalance(
       nftID,
       [subnetID]

@@ -6,8 +6,6 @@ import { Collection, DeleteResult, FindCursor, InsertManyResult, MongoClient, Up
 import ServerCostCalculatorABI from './ABI/ServerCostCalculator';
 import { getSkyNode } from './init';
 import { COService } from '@decloudlabs/sky-cluster-operator/lib/utils/service';
-import { DatabaseWriterExecution } from '@decloudlabs/sky-cluster-operator/lib/utils/databaseWriterExecution';
-import { NFTTrack } from '@decloudlabs/sky-cluster-operator/lib/types/types';
 
 interface NFTCosts {
     nftID: string;

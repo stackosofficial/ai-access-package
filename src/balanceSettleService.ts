@@ -1,34 +1,32 @@
 
 import { ethers } from "ethers";
-import { DatabaseWriterExecution } from "@decloudlabs/sky-cluster-operator/lib/utils/databaseWriterExecution";
-import { ENVConfig } from "@decloudlabs/sky-cluster-operator/lib/config/envConfig";
 import ServerCostCalculator from "./ABI/ServerCostCalculator";
-import { Web3Service } from "@decloudlabs/sky-cluster-operator/lib/config/ethersConfig";
-import { DatabaseService } from "@decloudlabs/sky-cluster-operator/lib/services/databaseService";
 import ServerBalanceDatabaseService from "./serverBalanceDatabaseService";
 import { NFTCosts } from "./types/types";
-import { APICallReturn } from "@decloudlabs/sky-cluster-operator/lib/types/types";
+import { APICallReturn } from "@decloudlabs/skynet/lib/types/types";
+import ENVConfig from "./envConfig";
 
 import SkyMainNodeJS from '@decloudlabs/skynet/lib/services/SkyMainNodeJS';
 import SkyEnvConfigNodeJS, { AppSubnetConfig } from '@decloudlabs/skynet/lib/types/types';
+import { DatabaseWriterExecution } from '@decloudlabs/sky-cluster-operator/lib/utils/databaseWriterExecution';
 
 let initializedAppCrypto: SkyMainNodeJS;
 
-const initializeSkyNodeCrypto = async (): Promise<SkyMainNodeJS> => {
+const initializeSkyNodeCrypto = async (envConfig: ENVConfig): Promise<SkyMainNodeJS> => {
     if (!initializedAppCrypto) {
-        const envConfig: SkyEnvConfigNodeJS = {
-            JRPC_PROVIDER: process.env.JSON_RPC_PROVIDER!,
-            WALLET_PRIVATE_KEY: process.env.ACCESSPOINT_PRIVATE_KEY!,
-            STORAGE_API: {}
+        const skymainEnvConfig: SkyEnvConfigNodeJS = {
+            JRPC_PROVIDER: envConfig.env.JSON_RPC_PROVIDER,
+            WALLET_PRIVATE_KEY: envConfig.env.WALLET_PRIVATE_KEY,
+            STORAGE_API: envConfig.env.STORAGE_API,
         };
-        initializedAppCrypto = new SkyMainNodeJS(envConfig);
+            initializedAppCrypto = new SkyMainNodeJS(skymainEnvConfig);
         await initializedAppCrypto.init(true);
     }
     return initializedAppCrypto;
 };
 
-const getSkyNode = async (): Promise<SkyMainNodeJS> => {
-    return await initializeSkyNodeCrypto();
+const getSkyNode = async (envConfig: ENVConfig): Promise<SkyMainNodeJS> => {
+    return await initializeSkyNodeCrypto(envConfig);
 };
 
 export default class BalanceSettleService {
@@ -38,18 +36,17 @@ export default class BalanceSettleService {
     serverCostCalculator: ethers.Contract;
     checkBalanceCondition: (nftCosts: NFTCosts) => Promise<APICallReturn<boolean>>;
 
-
-    constructor(databaseService: ServerBalanceDatabaseService, envConfig: ENVConfig, web3Service: Web3Service, checkBalanceCondition: (nftCosts: NFTCosts) => Promise<APICallReturn<boolean>>) {
+    constructor(envConfig: ENVConfig, databaseService: ServerBalanceDatabaseService, signer: ethers.Wallet, checkBalanceCondition: (nftCosts: NFTCosts) => Promise<APICallReturn<boolean>>) {
         this.databaseService = databaseService;
-        this.envConfig = envConfig;
-        this.serverCostCalculator = new ethers.Contract("0x099B69911207bE7a2A18C2a2878F9b267838e388", ServerCostCalculator, web3Service.signer);
+        this.serverCostCalculator = new ethers.Contract("0x099B69911207bE7a2A18C2a2878F9b267838e388", ServerCostCalculator, signer);
         this.shortTermDatabaseWriter = new DatabaseWriterExecution<NFTCosts>(
-            "shortTermNFTTracker",
+            "BalanceSettleService",
             this.scanShortTermBalances,
             this.addShortTermTrackerInternal,
             1 * 60 * 1000,
         );
         this.checkBalanceCondition = checkBalanceCondition;
+        this.envConfig = envConfig;
     }
 
 
@@ -61,9 +58,9 @@ export default class BalanceSettleService {
 
     scanShortTermBalances = async () => {
         console.log("scanning short term balances")
-        const skyNode = await getSkyNode(); 
+        const skyNode = await getSkyNode(this.envConfig); 
 
-        const SUBNET_ID = this.envConfig.SUBNET_ID;
+        const SUBNET_ID = this.envConfig.env.SUBNET_ID;
 
         const serverCostContract = new ethers.Contract("0x099B69911207bE7a2A18C2a2878F9b267838e388", ServerCostCalculator, skyNode.contractService.signer);
 
