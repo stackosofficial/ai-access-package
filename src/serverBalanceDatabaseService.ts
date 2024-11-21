@@ -6,22 +6,25 @@ import { Collection, DeleteResult, FindCursor, InsertManyResult, MongoClient, Up
 import ServerCostCalculatorABI from './ABI/ServerCostCalculator';
 import { getSkyNode } from './init';
 import { COService } from '@decloudlabs/sky-cluster-operator/lib/utils/service';
+import ENVConfig from './envConfig';
 
 interface NFTCosts {
     nftID: string;
     costs: string;
   }
   
-let nftCostsCollection: Collection<NFTCosts>;
+let nftTrackerCollection: Collection<NFTCosts>;
+let nftExtractCollection: Collection<NFTCosts>;
 let NFT_UPDATE_INTERVAL = 30000;
 let batchSize = 100;
 
 
 export default class ServerBalanceDatabaseService implements COService {
+    envConfig: ENVConfig;
+    private client: MongoClient | null = null;
 
-
-  constructor() {
-
+  constructor(envConfig: ENVConfig) {
+    this.envConfig = envConfig;
   }
 
     setup = async () => {
@@ -29,12 +32,12 @@ export default class ServerBalanceDatabaseService implements COService {
     }
 
 
-    setBalance = async (nftID: string, price: string): Promise<APICallReturn<number>> => {
+    setTrackerBalance = async (nftID: string, price: string): Promise<APICallReturn<number>> => {
         const result = await apiCallWrapper<
         UpdateResult<NFTCosts>,
         number
     >(
-        nftCostsCollection.updateOne(
+        nftTrackerCollection.updateOne(
             {},
             {
                 $set: {nftID, costs: price},
@@ -49,62 +52,167 @@ export default class ServerBalanceDatabaseService implements COService {
         return result;
     }
 
-    getBalance = async (
+
+    getTrackerBalance = async (
         nftID: string,
       ): Promise<APICallReturn<NFTCosts | null>> => {
         const result = await apiCallWrapper<NFTCosts | null, NFTCosts | null>(
-            nftCostsCollection.findOne({ nftID }),
+            nftTrackerCollection.findOne({ nftID }),
             (res) => res,
         );
       
         return result;
     };
 
-    addBalance = async (nftID: string, price: string): Promise<APICallReturn<number>> => {
-        const balance = await this.getBalance(nftID);
+    addTrackerBalance = async (nftID: string, price: string): Promise<APICallReturn<number>> => {
+        const balance = await this.getTrackerBalance(nftID);
         if(balance.success == false) return balance;
       
         if(balance.data) {
           const newBalance = ethers.BigNumber.from(balance.data?.costs || 0).add(ethers.BigNumber.from(price));
-          return await this.setBalance(nftID, newBalance.toString());
+          return await this.setTrackerBalance(nftID, newBalance.toString());
         }
         else {
-          return await this.setBalance(nftID, price);
+          return await this.setTrackerBalance(nftID, price);
         }
     }
 
-    getNFTCostCursor = (
+    getNFTTrackerCursor = (
         batchSize = 1000,
     ): FindCursor<NFTCosts> => {
-        const cursor = nftCostsCollection.find<NFTCosts>({
+        const cursor = nftTrackerCollection.find<NFTCosts>({
         });
 
         cursor.batchSize(batchSize);
         return cursor;
     };
 
-    deleteNFTCosts = async (nftIDs: string[]) => {
+    deleteNFTTracker = async (nftIDs: string[]) => {
         const resp = await apiCallWrapper<DeleteResult, number>(
-            nftCostsCollection.deleteMany({ nftID: { $in: nftIDs } }),
+            nftTrackerCollection.deleteMany({ nftID: { $in: nftIDs } }),
+            (res) => res.deletedCount,
+        );
+        return resp;
+    }
+
+    setExtractBalance = async (nftID: string, price: string): Promise<APICallReturn<number>> => {
+        const result = await apiCallWrapper<
+        UpdateResult<NFTCosts>,
+        number
+    >(
+        nftExtractCollection.updateOne(
+            {},
+            {
+                $set: {nftID, costs: price},
+            },
+            {
+                upsert: true,
+            },
+        ),
+        (res) => res.upsertedCount + res.modifiedCount,
+    );
+      
+        return result;
+    }
+
+
+    getExtractBalance = async (
+        nftID: string,
+      ): Promise<APICallReturn<NFTCosts | null>> => {
+        const result = await apiCallWrapper<NFTCosts | null, NFTCosts | null>(
+            nftExtractCollection.findOne({ nftID }),
+            (res) => res,
+        );
+      
+        return result;
+    };
+
+    addExtractBalance = async (nftID: string, price: string): Promise<APICallReturn<number>> => {
+        const balance = await this.getExtractBalance(nftID);
+        if(balance.success == false) return balance;
+      
+        if(balance.data) {
+          const newBalance = ethers.BigNumber.from(balance.data?.costs || 0).add(ethers.BigNumber.from(price));
+          return await this.setExtractBalance(nftID, newBalance.toString());
+        }
+        else {
+          return await this.setExtractBalance(nftID, price);
+        }
+    }
+
+    getNFTExtractCursor = (
+        batchSize = 1000,
+    ): FindCursor<NFTCosts> => {
+        const cursor = nftExtractCollection.find<NFTCosts>({
+        });
+
+        cursor.batchSize(batchSize);
+        return cursor;
+    };
+
+    deleteNFTExtract = async (nftIDs: string[]) => {
+        const resp = await apiCallWrapper<DeleteResult, number>(
+            nftExtractCollection.deleteMany({ nftID: { $in: nftIDs } }),
             (res) => res.deletedCount,
         );
         return resp;
     }
 
     setupDatabase = async () => {
-        const MONGODB_URL = process.env.MONGODB_URL || '';
-        const MONGODB_DBNAME = process.env.MONGODB_DBNAME || '';
+        const MONGODB_URL = this.envConfig.env.MONGODB_URL || '';
+        const MONGODB_DBNAME = this.envConfig.env.MONGODB_DBNAME || '';
   
-        const client = await MongoClient.connect(MONGODB_URL);
+        this.client = await MongoClient.connect(MONGODB_URL);
         console.log(`created database client: ${MONGODB_URL}`);
   
-        const database = client.db(MONGODB_DBNAME);
+        const database = this.client.db(MONGODB_DBNAME);
         console.log(`connected to database: ${MONGODB_DBNAME}`);
 
+
+        const collectionName = this.envConfig.env.MONGODB_COLLECTION_NAME || '';
+
+        console.log("checking mongodb cred:", MONGODB_URL, MONGODB_DBNAME, collectionName);
+
   
-        nftCostsCollection = database.collection<NFTCosts>("nftCosts");
+        nftTrackerCollection = database.collection<NFTCosts>(`${collectionName}_tracker`);
+        nftExtractCollection = database.collection<NFTCosts>(`${collectionName}_extract`);
     }
 
   update = async () => {}
+
+  setTrackerAndExtractBalance = async (nftID: string, price: string): Promise<APICallReturn<boolean>> => {
+        if (!this.client) {
+            return { success: false, data: new Error('Database client not initialized') };
+        }
+
+        const session = this.client.startSession();
+        
+        try {
+            await session.withTransaction(async () => {
+                // Set both balances within the same transaction
+                await nftTrackerCollection.updateOne(
+                    { nftID },
+                    { $set: { nftID, costs: price } },
+                    { upsert: true, session }
+                );
+                
+                await nftExtractCollection.updateOne(
+                    { nftID },
+                    { $set: { nftID, costs: price } },
+                    { upsert: true, session }
+                );
+            });
+
+            return { success: true, data: true };
+        } catch (error) {
+            return { 
+                success: false, 
+                data: new Error("unknown error")
+            };
+        } finally {
+            await session.endSession();
+        }
+    }
+
 }
 

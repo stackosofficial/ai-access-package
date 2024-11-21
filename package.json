@@ -1,6 +1,6 @@
 {
   "name": "@decloudlabs/sky-ai-accesspoint",
-  "version": "0.0.40",
+  "version": "0.0.42",
   "description": "StackAI API",
   "main": "dist/index.js",
   "publishConfig": {
@@ -12,7 +12,7 @@
     "build": "tsc"
   },
   "dependencies": {
-    "@decloudlabs/skynet": "^0.5.13",
+    "@decloudlabs/skynet": "^0.5.15",
     "@decloudlabs/sky-cluster-operator": "^0.1.21",
     "body-parser": "^1.20.3",
     "cors": "^2.8.5",

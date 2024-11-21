@@ -1,7 +1,7 @@
 import { ENVDefinition } from "./types/types";
 import { APICallReturn } from "@decloudlabs/skynet/lib/types/types";
-import balanceExtractService from "./balanceExtractService";
-import BalanceSettleService from "./balanceSettleService";
+import BalanceExtractService from "./balanceExtractService";
+import BalanceSettleService from "./balanceTrackerService";
 import ServerBalanceDatabaseService from "./serverBalanceDatabaseService";
 import { NFTCosts } from "./types/types";
 import ENVConfig from "./envConfig";
@@ -12,7 +12,7 @@ export default class BalanceRunMain {
     nextRunTime: number;
     envConfig: ENVConfig;
     balanceSettleService: BalanceSettleService;
-    balanceExtractService: balanceExtractService;
+    balanceExtractService: BalanceExtractService;
     serverBalanceDatabaseService: ServerBalanceDatabaseService;
     costApplierService: CostApplierService;
     signer: ethers.Wallet;
@@ -20,4 +20,5 @@ export default class BalanceRunMain {
     constructor(env: ENVDefinition, checkBalanceCondition: (nftCosts: NFTCosts) => Promise<APICallReturn<boolean>>, applyCosts: (nftCosts: NFTCosts) => Promise<APICallReturn<NFTCosts>>, extractCostTime: number);
     setup: () => Promise<boolean>;
     update: () => Promise<never>;
+    addBalance: (nftID: string, price: string) => Promise<APICallReturn<boolean>>;
 }

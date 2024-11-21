@@ -39,7 +39,7 @@ export default class CostApplierService {
     scanShortTermBalances = async () => {
         console.log("scanning short term balances")
         const batchVal = 1000;
-        const cursor = this.databaseService.getNFTCostCursor(
+        const cursor = this.databaseService.getNFTExtractCursor(
             batchVal,
         );
         // console.log("checking cursor: ", cursor.hasNext());
@@ -68,7 +68,10 @@ export default class CostApplierService {
 
         for(let i = 0; i < newCostList.length; i++) {
             const nftCosts = newCostList[i];
-            await this.databaseService.setBalance(nftCosts.nftID, nftCosts.costs);
+            const resp = await this.databaseService.setTrackerAndExtractBalance(nftCosts.nftID, nftCosts.costs);
+            if(!resp.success) {
+                console.error("failed to add balance: ", resp.data);
+            }
         }
     };
 

@@ -1,8 +1,8 @@
 import { ENVDefinition } from "./types/types";
 import { APICallReturn } from "@decloudlabs/skynet/lib/types/types";
 import { sleep } from "@decloudlabs/skynet/lib/utils/utils";
-import balanceExtractService from "./balanceExtractService";
-import BalanceSettleService from "./balanceSettleService";
+import BalanceExtractService from "./balanceExtractService";
+import BalanceSettleService from "./balanceTrackerService";
 import ServerBalanceDatabaseService from "./serverBalanceDatabaseService";
 import { NFTCosts } from "./types/types";
 import ENVConfig from "./envConfig";
@@ -17,7 +17,7 @@ export default class BalanceRunMain {
     nextRunTime: number;
     envConfig: ENVConfig;
     balanceSettleService: BalanceSettleService;
-    balanceExtractService: balanceExtractService;
+    balanceExtractService: BalanceExtractService;
     serverBalanceDatabaseService: ServerBalanceDatabaseService;
     costApplierService: CostApplierService
     signer: ethers.Wallet;
@@ -95,7 +95,7 @@ export default class BalanceRunMain {
         //     this.envConfig,
         // );
 
-        this.serverBalanceDatabaseService = new ServerBalanceDatabaseService();
+        this.serverBalanceDatabaseService = new ServerBalanceDatabaseService(this.envConfig);
         this.balanceSettleService = new BalanceSettleService(
             this.envConfig,
             this.serverBalanceDatabaseService,
@@ -103,7 +103,7 @@ export default class BalanceRunMain {
             checkBalanceCondition
         );
 
-        this.balanceExtractService = new balanceExtractService(this.envConfig);
+        this.balanceExtractService = new BalanceExtractService(this.envConfig, this.serverBalanceDatabaseService);
 
         this.costApplierService = new CostApplierService(
             this.serverBalanceDatabaseService,
@@ -241,4 +241,19 @@ export default class BalanceRunMain {
             }
         }
     };
+
+    addBalance = async (nftID: string, price: string): Promise<APICallReturn<boolean>> => {
+        const trackerBalanceResp = await this.serverBalanceDatabaseService.getTrackerBalance(nftID);
+        if(!trackerBalanceResp.success) {
+            console.error("failed to get tracker balance: ", trackerBalanceResp.data);
+            return trackerBalanceResp;
+        }
+        const extractBalanceResp = await this.serverBalanceDatabaseService.getExtractBalance(nftID);
+        if(!extractBalanceResp.success) {
+            console.error("failed to get extract balance: ", extractBalanceResp.data);
+            return extractBalanceResp;
+        }
+        const resp = await this.serverBalanceDatabaseService.setTrackerAndExtractBalance(nftID, price);
+        return resp;
+    }
 }

@@ -14,6 +14,7 @@ let initializedAppCrypto: SkyMainNodeJS;
 
 const initializeSkyNodeCrypto = async (envConfig: ENVConfig): Promise<SkyMainNodeJS> => {
     if (!initializedAppCrypto) {
+        console.log("inside initializeSkyNodeCrypto, checking env: ", envConfig.env.JSON_RPC_PROVIDER, envConfig.env.WALLET_PRIVATE_KEY, envConfig.env.STORAGE_API)
         const skymainEnvConfig: SkyEnvConfigNodeJS = {
             JRPC_PROVIDER: envConfig.env.JSON_RPC_PROVIDER,
             WALLET_PRIVATE_KEY: envConfig.env.WALLET_PRIVATE_KEY,
@@ -65,7 +66,7 @@ export default class BalanceSettleService {
         const serverCostContract = new ethers.Contract("0x099B69911207bE7a2A18C2a2878F9b267838e388", ServerCostCalculator, skyNode.contractService.signer);
 
         const batchVal = 1000;
-        const cursor = this.databaseService.getNFTCostCursor(
+        const cursor = this.databaseService.getNFTExtractCursor(
             batchVal,
         );
         // console.log("checking cursor: ", cursor.hasNext());
@@ -114,7 +115,7 @@ export default class BalanceSettleService {
             }
         }
 
-        await this.databaseService.deleteNFTCosts(deleteList);
+        await this.databaseService.deleteNFTExtract(deleteList);
     };
 
 
