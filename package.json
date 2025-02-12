@@ -1,7 +1,7 @@
 {
   "name": "@decloudlabs/sky-ai-accesspoint",
-  "version": "0.0.42",
-  "description": "StackAI API",
+  "version": "0.0.45",
+  "description": "AI Access Point API",
   "main": "dist/index.js",
   "publishConfig": {
     "access": "public"
@@ -12,14 +12,10 @@
     "build": "tsc"
   },
   "dependencies": {
-    "@decloudlabs/skynet": "^0.5.15",
-    "@decloudlabs/sky-cluster-operator": "^0.1.21",
-    "body-parser": "^1.20.3",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "ethers": "^5.7.1",
+    "@decloudlabs/skynet": "0.6.10",
+    "ethers": "^6.13.5",
     "express": "^4.19.2",
-    "mongodb": "^6.10.0",
+    "firebase-admin": "^13.1.0",
     "openai": "^4.70.2"
   },
   "devDependencies": {

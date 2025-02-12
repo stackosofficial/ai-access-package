@@ -1,25 +1,30 @@
 {
   "compilerOptions": {
-      "incremental": true /* Enable incremental compilation */,
-      "target": "es5",
-      "allowJs": true,
-      "strict": true,
-      // "module": "esnext",
-      // "target": "es2016" /* Specify ECMAScript target version: */,
-      // "module": "commonjs" /* 'none', 'commonjs', 'amd', 'system', etc */,
-      "declaration": true /* Concatenate & emit output to single file.*/,
-      "outDir": "lib" /* Redirect output to the directory. */,
-      "esModuleInterop": true /* Enables intero between CommonJS and ES */,
-      "skipLibCheck": true /* Skip type checking of declaration files. */,
-      "forceConsistentCasingInFileNames": true /* Disallow inconsistently */,
-      "paths": {
-          "@/*": ["./src/*"]
-      },
-      // "esModuleInterop": true,
-      "moduleResolution": "node",
-      "resolveJsonModule": true,
-      "isolatedModules": true,
-      "jsx": "preserve"
+    "incremental": true /* Enable incremental compilation */,
+    "target": "es2020",
+    "allowJs": true,
+    "strict": true,
+    "module": "commonjs",
+    "declaration": true /* Concatenate & emit output to single file.*/,
+    "outDir": "lib" /* Redirect output to the directory. */,
+    "esModuleInterop": true /* Enables intero between CommonJS and ES */,
+    "skipLibCheck": true /* Skip type checking of declaration files. */,
+    "forceConsistentCasingInFileNames": true /* Disallow inconsistently */,
+    "paths": {
+      "@/*": ["src/*"]
+    },
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "baseUrl": "."
   },
-  "include": ["src"]
+  "include": ["src/**/*"],
+  "exclude": [
+    "node_modules",
+    "**/__tests__/**",
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "src/test/**"
+  ]
 }

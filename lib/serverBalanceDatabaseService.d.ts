@@ -1,28 +1,26 @@
-import { APICallReturn } from '@decloudlabs/skynet/lib/types/types';
-import { FindCursor } from 'mongodb';
-import { COService } from '@decloudlabs/sky-cluster-operator/lib/utils/service';
-import ENVConfig from './envConfig';
-interface NFTCosts {
-    nftID: string;
-    costs: string;
-}
-export default class ServerBalanceDatabaseService implements COService {
-    envConfig: ENVConfig;
-    private client;
+import { AccountNFT, APICallReturn } from "@decloudlabs/skynet/lib/types/types";
+import ENVConfig from "./envConfig";
+import { NFTCosts } from "./types/types";
+import * as admin from "firebase-admin";
+export default class ServerBalanceDatabaseService {
+    private envConfig;
+    private db;
     constructor(envConfig: ENVConfig);
     setup: () => Promise<void>;
-    setTrackerBalance: (nftID: string, price: string) => Promise<APICallReturn<number>>;
-    getTrackerBalance: (nftID: string) => Promise<APICallReturn<NFTCosts | null>>;
-    addTrackerBalance: (nftID: string, price: string) => Promise<APICallReturn<number>>;
-    getNFTTrackerCursor: (batchSize?: number) => FindCursor<NFTCosts>;
-    deleteNFTTracker: (nftIDs: string[]) => Promise<APICallReturn<number, Error>>;
-    setExtractBalance: (nftID: string, price: string) => Promise<APICallReturn<number>>;
-    getExtractBalance: (nftID: string) => Promise<APICallReturn<NFTCosts | null>>;
-    addExtractBalance: (nftID: string, price: string) => Promise<APICallReturn<number>>;
-    getNFTExtractCursor: (batchSize?: number) => FindCursor<NFTCosts>;
-    deleteNFTExtract: (nftIDs: string[]) => Promise<APICallReturn<number, Error>>;
+    private getCollectionRef;
+    private runTransaction;
+    private getNFTId;
+    setExtractBalance: (accountNFT: AccountNFT, price: string) => Promise<APICallReturn<number>>;
+    getExtractBalance: (accountNFT: AccountNFT) => Promise<APICallReturn<NFTCosts | null>>;
+    getNFTExtractCursor(): AsyncGenerator<NFTCosts, void, unknown>;
+    deleteNFTExtract: (accountNFTs: AccountNFT[]) => Promise<{
+        success: boolean;
+        data: number;
+    } | {
+        success: boolean;
+        data: Error;
+    }>;
     setupDatabase: () => Promise<void>;
     update: () => Promise<void>;
-    setTrackerAndExtractBalance: (nftID: string, price: string) => Promise<APICallReturn<boolean>>;
+    getClient: () => Promise<admin.firestore.Firestore>;
 }
-export {};

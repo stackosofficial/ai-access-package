@@ -1,27 +1,18 @@
+import { AccountNFT } from "@decloudlabs/skynet/lib/types/types";
 export interface ENVDefinition {
     JSON_RPC_PROVIDER: string;
     WALLET_PRIVATE_KEY: string;
     SUBNET_ID: string;
-    MONGODB_URL: string;
-    MONGODB_DBNAME: string;
-    MONGODB_COLLECTION_NAME: string;
-    STORAGE_API: {
-        LIGHTHOUSE?: {
-            LIGHTHOUSE_API_KEY: string;
-        };
-        IPFS?: {
-            PROJECT_ID: string;
-            PROJECT_SECRET: string;
-        };
-        CLOUD: {
-            BUCKET_NAME: string;
-            ACCESS_KEY_ID: string;
-            SECRET_ACCESS_KEY: string;
-            REGION: string;
-        };
-    };
+    FIREBASE_PROJECT_ID: string;
+    FIREBASE_CLIENT_EMAIL: string;
+    FIREBASE_PRIVATE_KEY: string;
+    SERVER_COST_CONTRACT_ADDRESS: string;
+    OPENAI_API_KEY: string;
 }
 export interface NFTCosts {
-    nftID: string;
+    accountNFT: AccountNFT;
     costs: string;
+}
+export interface AIModelResponse {
+    content: string;
 }

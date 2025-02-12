@@ -1,16 +1,17 @@
-import { DatabaseWriterExecution } from '@decloudlabs/sky-cluster-operator/lib/utils/databaseWriterExecution';
-import { NFTCosts } from './types/types';
-import ENVConfig from './envConfig';
-import ServerBalanceDatabaseService from './serverBalanceDatabaseService';
-export default class balanceExtractService {
-    databaseWriter: DatabaseWriterExecution<NFTCosts[]>;
-    nftCostsToWriteList: NFTCosts[];
-    envConfig: ENVConfig;
-    databaseService: ServerBalanceDatabaseService;
+import ENVConfig from "./envConfig";
+import ServerBalanceDatabaseService from "./serverBalanceDatabaseService";
+export default class BalanceExtractService {
+    private databaseWriter;
+    private nftCostsToWriteList;
+    private envConfig;
+    private databaseService;
     constructor(envConfig: ENVConfig, databaseService: ServerBalanceDatabaseService);
-    addNFTCostsToWriteInternal: (nftCosts: NFTCosts[]) => void;
-    addNFTCostsToWrite: (nftCosts: NFTCosts[]) => Promise<void>;
-    scanNFTBalancesInternal: () => Promise<void>;
+    private delay;
+    private retryOperation;
+    private addNFTCostsToWriteInternal;
+    private addNFTCostsToWrite;
+    private processBatch;
+    private scanNFTBalancesInternal;
     setup: () => Promise<void>;
     update: () => Promise<void>;
 }

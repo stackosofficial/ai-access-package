@@ -1,259 +1,126 @@
-import { ENVDefinition } from "./types/types";
-import { APICallReturn } from "@decloudlabs/skynet/lib/types/types";
+import { AIModelResponse, ENVDefinition } from "./types/types";
+import { AccountNFT, APICallReturn } from "@decloudlabs/skynet/lib/types/types";
 import { sleep } from "@decloudlabs/skynet/lib/utils/utils";
 import BalanceExtractService from "./balanceExtractService";
-import BalanceSettleService from "./balanceTrackerService";
 import ServerBalanceDatabaseService from "./serverBalanceDatabaseService";
-import { NFTCosts } from "./types/types";
 import ENVConfig from "./envConfig";
-import express from "express";
-import cors from "cors";
-import CostApplierService from "./CostApplierService";
 import { ethers } from "ethers";
-
+import { OpenAI } from "openai";
+import { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 
 export default class BalanceRunMain {
-    RUN_DURATION: number;
-    nextRunTime: number;
-    envConfig: ENVConfig;
-    balanceSettleService: BalanceSettleService;
-    balanceExtractService: BalanceExtractService;
-    serverBalanceDatabaseService: ServerBalanceDatabaseService;
-    costApplierService: CostApplierService
-    signer: ethers.Wallet;
-    jsonProvider: ethers.providers.JsonRpcProvider;
+  RUN_DURATION: number;
+  nextRunTime: number;
+  envConfig: ENVConfig;
+  balanceExtractService: BalanceExtractService;
+  serverBalanceDatabaseService: ServerBalanceDatabaseService;
+  signer: ethers.Wallet;
+  jsonProvider: ethers.JsonRpcProvider;
+  openAI: OpenAI;
 
-    constructor(env: ENVDefinition, checkBalanceCondition: (nftCosts: NFTCosts) => Promise<APICallReturn<boolean>>, applyCosts: (nftCosts: NFTCosts) => Promise<APICallReturn<NFTCosts>>, extractCostTime: number) {
-        this.RUN_DURATION = 5000;
-        this.envConfig = new ENVConfig(env);
-        this.nextRunTime = new Date().getTime();
+  constructor(env: ENVDefinition, extractCostTime: number) {
+    this.RUN_DURATION = 5000;
+    this.envConfig = new ENVConfig(env);
+    this.nextRunTime = new Date().getTime();
 
+    this.jsonProvider = new ethers.JsonRpcProvider(
+      this.envConfig.env.JSON_RPC_PROVIDER,
+      undefined
+      // option,
+    );
+    console.log("json rpc: ", this.envConfig.env.JSON_RPC_PROVIDER);
 
-        this.jsonProvider = new ethers.providers.JsonRpcProvider(
-            this.envConfig.env.JSON_RPC_PROVIDER,
-            undefined,
-            // option,
-        );
-        console.log("json rpc: ", this.envConfig.env.JSON_RPC_PROVIDER);
+    this.signer = new ethers.Wallet(
+      this.envConfig.env.WALLET_PRIVATE_KEY,
+      this.jsonProvider
+    );
 
-        this.signer = new ethers.Wallet(
-            this.envConfig.env.WALLET_PRIVATE_KEY,
-            this.jsonProvider,
-        );
+    this.serverBalanceDatabaseService = new ServerBalanceDatabaseService(
+      this.envConfig
+    );
 
-        // this.contractService = new ContractService(
-        //     this.web3Service,
-        //     this.envConfig,
-        // );
-        // this.databaseService = new DatabaseService(this.envConfig);
-        // this.systemLogService = new SystemLogService(
-        //     this.databaseService,
-        //     this.envConfig,
-        // );
-        // this.nftLogService = new NFTLogService(
-        //     this.databaseService,
-        //     this.systemLogService,
-        //     this.envConfig,
-        // );
-        // this.eventProcessor = new NFTEventProcessor(this.contractService);
-        // this.nftBalanceAPIService = new NFTBalanceAPIService(this.envConfig);
-        // this.bootupEventCollectService = new BootEventCollectService(
-        //     this.databaseService,
-        //     this.contractService,
-        //     this.eventProcessor,
-        //     this.web3Service,
-        //     this.systemLogService,
-        //     this.envConfig,
-        // );
-        // this.appStatusLogService = new AppStatusService(
-        //     this.nftLogService,
-        //     this.envConfig,
-        // );
-        // this.eventAction = new EventAction(
-        //     this.contractService,
-        //     this.web3Service,
-        //     this.nftLogService,
-        //     this.nftBalanceAPIService,
-        //     this.systemLogService,
-        //     this.appStatusLogService,
-        //     this.envConfig,
-        //     this.appFunctions,
-        // );
-        // this.heartBeatService = new HeartBeatService(
-        //     this.databaseService,
-        //     this.systemLogService,
-        //     this.envConfig,
-        // );
-        // this.processCheckService = new ProcessCheckService(
-        //     this.systemLogService,
-        // );
+    this.balanceExtractService = new BalanceExtractService(
+      this.envConfig,
+      this.serverBalanceDatabaseService
+    );
 
-        // this.eventFetcherService = new EventFetcherService(
-        //     this.databaseService,
-        //     this.systemLogService,
-        //     this.eventProcessor,
-        //     this.envConfig,
-        // );
+    this.openAI = new OpenAI({
+      apiKey: this.envConfig.env.OPENAI_API_KEY,
+    });
+  }
 
-        this.serverBalanceDatabaseService = new ServerBalanceDatabaseService(this.envConfig);
-        this.balanceSettleService = new BalanceSettleService(
-            this.envConfig,
-            this.serverBalanceDatabaseService,
-            this.signer, 
-            checkBalanceCondition
-        );
+  setup = async () => {
+    try {
+      const UPDATE_DURATION = 10 * 1000;
+      this.RUN_DURATION = UPDATE_DURATION;
 
-        this.balanceExtractService = new BalanceExtractService(this.envConfig, this.serverBalanceDatabaseService);
+      await this.serverBalanceDatabaseService.setup();
+      await this.balanceExtractService.setup();
 
-        this.costApplierService = new CostApplierService(
-            this.serverBalanceDatabaseService,
-            this.envConfig,
-            this.signer,
-            applyCosts,
-            extractCostTime,
-        );
-        // setEventAction(this.eventAction);
-        // this.eventProcessor.setRunTick(true);
+      return true;
+    } catch (err: any) {
+      const error: Error = err;
+      console.log("main setup error: ", error);
+      return false;
+    }
+  };
+
+  update = async () => {
+    while (true) {
+      {
+        const curTime = new Date().getTime();
+        const sleepDur = this.nextRunTime - curTime;
+        await sleep(sleepDur);
+        this.nextRunTime = new Date().getTime() + this.RUN_DURATION;
+      }
+
+      try {
+        await this.balanceExtractService.update();
+      } catch (err: any) {
+        const error: Error = err;
+        console.error("error in update: ", error);
+      }
+    }
+  };
+
+  addCost = async (
+    accountNFT: AccountNFT,
+    cost: string
+  ): Promise<APICallReturn<boolean>> => {
+    const extractBalanceResp =
+      await this.serverBalanceDatabaseService.getExtractBalance(accountNFT);
+    if (!extractBalanceResp.success) {
+      console.error("failed to get extract balance: ", extractBalanceResp.data);
+      return extractBalanceResp;
     }
 
-    // addSetupLog = async (type: SystemLog["logType"], message: string) => {
-    //     await this.systemLogService.addSystemLog({
-    //         timestamp: new Date(),
-    //         operation: "main.setup",
-    //         message: message,
-    //         logType: type,
-    //     });
-    // };
+    console.log("extract balance: ", extractBalanceResp.data);
 
-    // addUpdateLog = async (type: SystemLog["logType"], message: string) => {
-    //     await this.systemLogService.addSystemLog({
-    //         timestamp: new Date(),
-    //         operation: "main.update",
-    //         message: message,
-    //         logType: type,
-    //     });
-    // };
-
-    setup = async () => {
-        try {
-
-            // await this.systemLogService.setup();
-
-            // process.on("uncaughtException", async (caughtException) => {
-            //     console.log("inside uncaught exception: " + caughtException);
-            //     try {
-            //         await this.systemLogService.addSystemLog({
-            //             timestamp: new Date(),
-            //             operation: "main.update",
-            //             message:
-            //                 caughtException.message +
-            //                 ": " +
-            //                 caughtException.stack,
-            //             logType: "error",
-            //         });
-            //         await this.systemLogService.pushSysLogsToDatabase();
-
-            //         process.exit(0);
-            //     } catch (err) {
-            //         console.error(
-            //             "failed to push system logs to database: ",
-            //             err,
-            //         );
-            //     }
-            // });
-
-            // this.addSetupLog(
-            //     "operation",
-            //     `ENV: ${stringifyTryCatch(this.envConfig)}`,
-            // );
-
-            const UPDATE_DURATION = 10 * 1000;
-            this.RUN_DURATION = UPDATE_DURATION;
-
-            // await this.nftLogService.setup();
-
-            // await this.heartBeatService.setup();
-
-            // await this.databaseService.setup();
-
-            // await this.web3Service.setup();
-
-            // await this.contractService.setup();
-
-            // await this.eventProcessor.setup();
-
-            // await this.bootupEventCollectService.setup();
-
-            // await this.eventAction.setup();
-
-            // await this.appStatusLogService.setup();
-
-            // await this.processCheckService.setup();
-
-            // await this.eventFetcherService.setup();
-
-            await this.serverBalanceDatabaseService.setup();
-
-            await this.balanceSettleService.setup();
-
-            await this.balanceExtractService.setup();
-
-            await this.costApplierService.setup();
-
-            // initExpress(this);
-
-            return true;
-        } catch (err: any) {
-            const error: Error = err;
-            console.log("main setup error: ", error);
-            return false;
-        }
-    };
-
-    update = async () => {
-        while (true) {
-            {
-                const curTime = new Date().getTime();
-                const sleepDur = this.nextRunTime - curTime;
-                await sleep(sleepDur);
-                this.nextRunTime = new Date().getTime() + this.RUN_DURATION;
-            }
-
-            try {
-                // await this.eventFetcherService.update();
-
-                // await this.eventProcessor.update();
-                // await this.bootupEventCollectService.update();
-                // await this.nftLogService.update();
-                // await this.appStatusLogService.update();
-                // await this.processCheckService.update();
-                // await this.systemLogService.update();
-                // await this.heartBeatService.update();
-                await this.balanceSettleService.update();
-
-                await this.balanceExtractService.update();
-
-                await this.costApplierService.update();
-            } catch (err: any) {
-                const error: Error = err;
-                console.error("error in update: ", error);
-                // await this.addUpdateLog("error", error.message);
-            }
-        }
-    };
-
-    addBalance = async (nftID: string, price: string): Promise<APICallReturn<boolean>> => {
-        const trackerBalanceResp = await this.serverBalanceDatabaseService.getTrackerBalance(nftID);
-        if(!trackerBalanceResp.success) {
-            console.error("failed to get tracker balance: ", trackerBalanceResp.data);
-            return trackerBalanceResp;
-        }
-        const extractBalanceResp = await this.serverBalanceDatabaseService.getExtractBalance(nftID);
-        if(!extractBalanceResp.success) {
-            console.error("failed to get extract balance: ", extractBalanceResp.data);
-            return extractBalanceResp;
-        }
-        const resp = await this.serverBalanceDatabaseService.setTrackerAndExtractBalance(nftID, price);
-        return resp;
+    const resp = await this.serverBalanceDatabaseService.setExtractBalance(
+      accountNFT,
+      cost
+    );
+    if (!resp.success) {
+      return {
+        success: false,
+        data: new Error("Failed to set extract balance"),
+      };
     }
+    return { success: true, data: true };
+  };
+
+  async callAIModel(
+    messages: ChatCompletionMessageParam[]
+  ): Promise<AIModelResponse> {
+    const completion = await this.openAI.chat.completions.create({
+      messages,
+      model: "gpt-4o-mini",
+      temperature: 0,
+      response_format: { type: "json_object" },
+    });
+
+    return {
+      content: completion.choices[0].message.content || "",
+    };
+  }
 }

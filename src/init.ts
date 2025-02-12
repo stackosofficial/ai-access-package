@@ -4,25 +4,57 @@ import { ENVDefinition, NFTCosts } from "./types/types";
 import { APICallReturn } from "@decloudlabs/skynet/lib/types/types";
 import { checkBalance } from "./middleware/checkBalance";
 import { protect } from "./middleware/auth";
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Request, Response, NextFunction } from "express";
 let skyNode: SkyMainNodeJS;
 
 export const setupSkyNode = async (skyNodeParam: SkyMainNodeJS) => {
-    skyNode = skyNodeParam;
-}
+  skyNode = skyNodeParam;
+};
 
 export const getSkyNode = () => {
-    return skyNode;
-}
+  return skyNode;
+};
 
+export const initAIAccessPoint = async (
+  env: ENVDefinition,
+  skyNodeParam: SkyMainNodeJS,
+  app: express.Application,
+  runNaturalFunction: (
+    req: Request,
+    res: Response,
+    balanceRunMain: BalanceRunMain
+  ) => Promise<void>,
+  runUpdate: boolean
+) => {
+  await setupSkyNode(skyNodeParam);
+  const balanceRunMain = new BalanceRunMain(env, 60 * 1000);
 
+  const contAddrResp = await skyNode.contractService.callContractRead<
+    string,
+    string
+  >(
+    skyNode.contractService.BalanceSettler.getSubnetPriceCalculator(
+      balanceRunMain.envConfig.env.SUBNET_ID
+    ),
+    (res) => res
+  );
+  if (contAddrResp.success == false) return contAddrResp;
+  const contractAddress = contAddrResp.data;
+  console.log("contractAddress", contractAddress);
+  balanceRunMain.envConfig.env.SERVER_COST_CONTRACT_ADDRESS = contractAddress;
 
-export const initAIAccessPoint = async (env: ENVDefinition, skyNodeParam: SkyMainNodeJS, checkBalanceCondition: (nftCosts: NFTCosts) => Promise<APICallReturn<boolean>>, applyCosts: (nftCosts: NFTCosts) => Promise<APICallReturn<NFTCosts>>, app: express.Application, runNaturalFunction: (req: Request, res: Response, balanceRunMain: BalanceRunMain) => Promise<void>) => {
-    await setupSkyNode(skyNodeParam);
-    const balanceRunMain = new BalanceRunMain(env, checkBalanceCondition, applyCosts, 60  * 1000);
-    await balanceRunMain.setup();
+  await balanceRunMain.setup();
+  if (runUpdate) {
     balanceRunMain.update();
+  }
 
-    app.post('/natural-request', protect, checkBalance, (req: Request, res: Response, next: NextFunction) => runNaturalFunction(req, res, balanceRunMain).catch(next));
-    return balanceRunMain;
-}
+  app.post(
+    "/natural-request",
+    protect,
+    (req: Request, res: Response, next: NextFunction) =>
+      checkBalance(req, res, next, contractAddress),
+    (req: Request, res: Response, next: NextFunction) =>
+      runNaturalFunction(req, res, balanceRunMain).catch(next)
+  );
+  return balanceRunMain;
+};
