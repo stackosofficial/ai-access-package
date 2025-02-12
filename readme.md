@@ -1,206 +1,202 @@
-# Skynet AI Access Point (`Skynet-SmartAccessPoint `)
+# Skynet AI Access Point
 
-The `sky-ai-accesspoint` package is designed to manage AI-related operations with integrated service control, cost management, and secure access. It connects to Skynet’s AI infrastructure, providing a streamlined interface for executing AI-driven requests, handling service states, and managing balance requirements.
+The `sky-ai-accesspoint` package provides a secure and efficient way to manage AI-related operations with integrated cost management and access control. It connects to Skynet's infrastructure and handles balance tracking for NFT-based access control.
 
 ## Table of Contents
+
 1. [Installation](#installation)
-2. [Configuration](#configuration)
-3. [Initialization and Setup](#initialization-and-setup)
-4. [Middleware Overview](#middleware-overview)
-5. [Core Functions](#core-functions)
-6. [Endpoint Summary](#endpoint-summary)
+2. [Environment Configuration](#environment-configuration)
+3. [Usage Guide](#usage-guide)
+4. [API Reference](#api-reference)
 
----
-
-### 1. Installation
-
-To install `Skynet-SmartAccessPoint ` in your project:
+## Installation
 
 ```bash
-npm install @decloudlabs/Skynet-SmartAccessPoint 
+npm install @decloudlabs/sky-ai-accesspoint
 ```
 
-### 2. Configuration
+## Environment Configuration
 
-# Environment Variables Documentation
+The following environment variables are required:
 
-## 1. `SUBNET_ID`
-Represents the unique identifier for a specific subnet within a network, enabling targeted network configuration and management.
+```env
+# Blockchain Configuration
+JSON_RPC_PROVIDER=<your-json-rpc-url>
+WALLET_PRIVATE_KEY=<your-wallet-private-key>
+SUBNET_ID=<your-subnet-id>
 
-## 2. `MONGODB_URL`
-The connection string required to connect to a MongoDB database, including details like the database cluster location, authentication credentials, and optional connection parameters.
+# Firebase Configuration
+FIREBASE_PROJECT_ID=<your-firebase-project-id>
+FIREBASE_CLIENT_EMAIL=<your-firebase-client-email>
+FIREBASE_PRIVATE_KEY=<your-firebase-private-key>
 
-## 3. `MONGODB_DBNAME`
-Specifies the name of the MongoDB database to be used, allowing the application to select the appropriate database within a MongoDB instance.
+# OpenAI Configuration
+OPENAI_API_KEY=<your-openai-api-key>
+```
 
-## 4. `MONGODB_COLLECTION_NAME`
-Defines the name of the collection within the database where data records are stored, making it clear which specific data group the application interacts with.
+## Usage Guide
 
-## 5. `JSON_RPC_URL`
-The endpoint URL for accessing a JSON-RPC service, commonly used in blockchain networks to interact with decentralized applications or perform various RPC calls.
+### Basic Setup
 
-## 6. `ACCESSPOINT_PRIVATE_KEY`
-A sensitive private key used for authenticating and signing actions performed by a cluster operator; it should be securely stored to prevent unauthorized access.
-
-## 7. `ACCESSPOINT_WALLET_ADDRESS`
-The public wallet address of the cluster operator, typically used in decentralized environments to receive and manage tokens or assets.
-
-## 8. `PORT`
-Specifies the port number on which the application server listens, directing incoming requests to the correct application service.
-
-
-### 3. Initialization and Setup
-
-In your main application file, import and set up the `Skynet-SmartAccessPoint ` with your project’s core services.
-
-**Example Initialization**:
+Here's how to initialize and use the AI Access Point:
 
 ```typescript
-import dotenv from 'dotenv';
-dotenv.config();
-
-import express from 'express';
-import { initAIAccessPoint } from '@decloudlabs/Skynet-SmartAccessPoint /lib/init';
-import { checkBalance } from '@decloudlabs/Skynet-SmartAccessPoint /lib/middleware/checkBalance';
-import { protect } from '@decloudlabs/Skynet-SmartAccessPoint /lib/middleware/auth';
-import SkyMainNodeJS from '@decloudlabs/skynet/lib/services/SkyMainNodeJS';
-import { getSkyNode } from './clients/skynet';
+import express from "express";
+import { initAIAccessPoint } from "@decloudlabs/sky-ai-accesspoint";
+import SkyMainNodeJS from "@decloudlabs/skynet/lib/services/SkyMainNodeJS";
 
 const app = express();
-const port = process.env.PORT || 3000;
+app.use(express.json());
 
-const setupAccessPoint = async () => {
-    const skyNode: SkyMainNodeJS = await getSkyNode();
+// Define your natural language processing function
+const runNaturalFunction = async (
+  req: Request,
+  res: Response,
+  balanceRunMain: BalanceRunMain
+) => {
+  try {
+    // Extract the request parameters
+    const { messages } = req.body;
 
-    await initAIAccessPoint(
-        skyNode,
-        checkBalanceCondition,
-        applyCosts,
-        app,
-        runNaturalFunction
-    );
+    // Call the AI model
+    const response = await balanceRunMain.callAIModel(messages);
 
-    app.listen(port, () => {
-        console.log(`Server running on port ${port}`);
-    });
+    // Send the response
+    res.json(response);
+  } catch (error) {
+    console.error("Error processing request:", error);
+    res.status(500).json({ error: "Failed to process request" });
+  }
 };
 
-setupAccessPoint();
+// Initialize the access point
+const main = async () => {
+  const skyNode = new SkyMainNodeJS(/* your config */);
+
+  const env = {
+    JSON_RPC_PROVIDER: process.env.JSON_RPC_PROVIDER!,
+    WALLET_PRIVATE_KEY: process.env.WALLET_PRIVATE_KEY!,
+    SUBNET_ID: process.env.SUBNET_ID!,
+    FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID!,
+    FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL!,
+    FIREBASE_PRIVATE_KEY: process.env.FIREBASE_PRIVATE_KEY!,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY!,
+    SERVER_COST_CONTRACT_ADDRESS: "", // Will be set automatically
+  };
+
+  const balanceRunMain = await initAIAccessPoint(
+    env,
+    skyNode,
+    app,
+    runNaturalFunction,
+    true // Set to true to enable automatic balance updates
+  );
+
+  app.listen(3000, () => {
+    console.log("Server running on port 3000");
+  });
+};
+
+main().catch(console.error);
 ```
 
-The `initAIAccessPoint` function sets up the necessary routes and middleware, allowing you to securely manage AI access while enforcing balance checks and service control.
+### Making Requests
 
-### 4. Core Functions
-
-Here’s an overview of the main functions required for `initAIAccessPoint`:
-
-#### `checkBalanceCondition`
-
-This function halts any active services associated with a given NFT ID. It identifies ongoing services and attempts to stop them, helping manage resources effectively.
+The package exposes a `/natural-request` endpoint that handles AI requests. Here's how to use it:
 
 ```typescript
-import { NFTCosts } from '@decloudlabs/Skynet-SmartAccessPoint /lib/types/types';
-import { APICallReturn } from '@decloudlabs/sky-cluster-operator/lib/types/types';
-import { stopService } from './clients/runpod'; // Assuming `stopService` stops a specific service
-
-const checkBalanceCondition = async (nftCosts: NFTCosts): Promise<APICallReturn<boolean>> => {
-    console.log(`Checking running services for NFT ID: ${nftCosts.nftID}`);
-    
-    const runningServices = await getRunningServices(nftCosts.nftID); // Implement `getRunningServices` to fetch services
-
-    const stoppedServices = [];
-    for (const service of runningServices) {
-        try {
-            console.log(`Stopping service: ${service.id}`);
-            const result = await stopService(service.id);
-            if (result.success) {
-                stoppedServices.push(service.id);
-            } else {
-                console.error(`Failed to stop service ${service.id}:`, result.error);
-            }
-        } catch (err) {
-            console.error(`Error stopping service ${service.id}:`, err);
-        }
-    }
-
-    console.log(`Stopped services: ${stoppedServices}`);
-    return { success: true, data: true };
+// Example request
+const request = {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    Authorization: "Bearer <your-auth-token>",
+  },
+  body: JSON.stringify({
+    accountNFT: {
+      collectionID: "your-collection-id",
+      nftID: "your-nft-id",
+    },
+    prompt: "process this request",
+    userAuthPayload: {
+      message: "1713033600000",
+      signature: "0x123",
+      userAddress: "0x123",
+    }, // get this by calling skynet.appManager.getUrsulaAuth()
+  }),
 };
 ```
 
-#### `applyCosts`
+### Cost Management
 
-Calculates and applies the usage costs based on request parameters, which helps manage the user’s balance effectively.
+The package automatically handles cost tracking for NFT-based access. Costs are stored in Firebase and can be managed using the `BalanceRunMain` class:
 
 ```typescript
-import { NFTCosts } from '@decloudlabs/Skynet-SmartAccessPoint /lib/types/types';
-import { ethers } from 'ethers';
-
-const applyCosts = async (nftCosts: NFTCosts): Promise<APICallReturn<NFTCosts>> => {
-    const additionalCost = ethers.BigNumber.from("10000000000000000"); // Cost in wei
-    const updatedCosts = {
-        ...nftCosts,
-        costs: ethers.BigNumber.from(nftCosts.costs).add(additionalCost).toString()
-    };
-    
-    return { success: true, data: updatedCosts };
+// Example of adding costs to an NFT
+const addCost = async (accountNFT, cost) => {
+  const response = await balanceRunMain.addCost(accountNFT, cost);
+  if (response.success) {
+    console.log("Cost added successfully");
+  } else {
+    console.error("Failed to add cost:", response.data);
+  }
 };
 ```
 
-#### `runNaturalFunction`
+## API Reference
 
-Processes natural language requests, interprets parameters with OpenAI, and executes operations based on the extracted information.
+### initAIAccessPoint
+
+Initializes the AI Access Point with the necessary configuration and middleware.
 
 ```typescript
-import { Request, Response } from 'express';
-import OpenAI from 'openai';
-import BalanceRunMain from '@decloudlabs/Skynet-SmartAccessPoint /lib/balanceRunMain';
-
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-});
-
-const runNaturalFunction = async (req: Request, res: Response, runMain: BalanceRunMain): Promise<void> => {
-    try {
-        const { prompt, nftId } = req.body;
-
-        const completion = await openai.chat.completions.create({
-            messages: [
-                {
-                    role: "system",
-                    content: "Extract necessary parameters for requested operations and return as JSON."
-                },
-                { role: "user", content: prompt }
-            ],
-            model: "gpt-3.5-turbo",
-            response_format: { type: "json_object" },
-        });
-
-        const params = JSON.parse(completion.choices[0].message.content || '{}');
-
-        if (params.question) {
-            res.send({ question: params.question });
-            return;
-        }
-
-        // Perform the operation based on extracted `params.action`
-        const response = await /* logic to execute action, e.g., create, start, stop */;
-        res.json(response);
-    } catch (error: any) {
-        res.status(400).json({ error: error.message });
-    }
-};
+function initAIAccessPoint(
+  env: ENVDefinition,
+  skyNode: SkyMainNodeJS,
+  app: express.Application,
+  runNaturalFunction: (
+    req: Request,
+    res: Response,
+    balanceRunMain: BalanceRunMain
+  ) => Promise<void>,
+  runUpdate: boolean
+): Promise<BalanceRunMain>;
 ```
 
-### 5. Endpoint Summary
+### BalanceRunMain
 
-The following endpoints are set up within `initAIAccessPoint`:
+The main class that handles balance management and AI model interactions.
 
-- **`POST /natural-request`**: Processes a natural language request and returns a response based on extracted parameters. This endpoint uses `runNaturalFunction` to interpret and execute various AI tasks.
+Key methods:
 
+- `addCost(accountNFT: AccountNFT, cost: string)`: Add costs to an NFT
+- `callAIModel(messages: ChatCompletionMessageParam[])`: Make AI model calls
+- `setup()`: Initialize the service
+- `update()`: Run periodic balance updates
 
-Example usage can be found in this repository: [@stackosofficial/skynet_accesspoint_example](https://github.com/stackosofficial/skynet_accesspoint_example)
+### Security
 
---- 
+The package includes built-in middleware for:
 
-This documentation provides a comprehensive overview of setting up and using `Skynet-SmartAccessPoint `, with key functions, middleware, and examples tailored to manage secure AI requests and service operations.
+- Authentication (`protect` middleware)
+- Balance checking (`checkBalance` middleware)
+- NFT ownership verification
+
+All endpoints are protected and require proper authentication and authorization.
+
+## Error Handling
+
+The package provides detailed error handling and logging:
+
+```typescript
+try {
+  const response = await balanceRunMain.addCost(accountNFT, cost);
+  if (!response.success) {
+    console.error("Operation failed:", response.data);
+  }
+} catch (error) {
+  console.error("Unexpected error:", error);
+}
+```
+
+For more examples and detailed documentation, visit our [GitHub repository](https://github.com/stackosofficial/skynet_accesspoint_example).
