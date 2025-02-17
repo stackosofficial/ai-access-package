@@ -19,7 +19,9 @@ export default class ServerBalanceDatabaseService {
 
   private getCollectionRef() {
     if (!this.db) throw new Error("Database not initialized");
-    return this.db.collection("nft_extract_costs");
+    return this.db.collection(
+      "nft_extract_costs_" + this.envConfig.env.SUBNET_ID
+    );
   }
 
   private async runTransaction<T>(

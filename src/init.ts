@@ -5,6 +5,8 @@ import { APICallReturn } from "@decloudlabs/skynet/lib/types/types";
 import { checkBalance } from "./middleware/checkBalance";
 import { protect } from "./middleware/auth";
 import express, { Request, Response, NextFunction } from "express";
+import multer from "multer";
+
 let skyNode: SkyMainNodeJS;
 
 export const setupSkyNode = async (skyNodeParam: SkyMainNodeJS) => {
@@ -24,8 +26,9 @@ export const initAIAccessPoint = async (
     res: Response,
     balanceRunMain: BalanceRunMain
   ) => Promise<void>,
-  runUpdate: boolean
-) => {
+  runUpdate: boolean,
+  upload?: multer.Multer
+): Promise<APICallReturn<BalanceRunMain>> => {
   await setupSkyNode(skyNodeParam);
   const balanceRunMain = new BalanceRunMain(env, 60 * 1000);
 
@@ -48,13 +51,26 @@ export const initAIAccessPoint = async (
     balanceRunMain.update();
   }
 
-  app.post(
-    "/natural-request",
-    protect,
-    (req: Request, res: Response, next: NextFunction) =>
-      checkBalance(req, res, next, contractAddress),
-    (req: Request, res: Response, next: NextFunction) =>
-      runNaturalFunction(req, res, balanceRunMain).catch(next)
-  );
-  return balanceRunMain;
+  if (upload) {
+    app.post(
+      "/natural-request",
+      upload.array("files"),
+      protect,
+      (req: Request, res: Response, next: NextFunction) =>
+        checkBalance(req, res, next, contractAddress),
+      (req: Request, res: Response, next: NextFunction) =>
+        runNaturalFunction(req, res, balanceRunMain).catch(next)
+    );
+  } else {
+    app.post(
+      "/natural-request",
+      protect,
+      (req: Request, res: Response, next: NextFunction) =>
+        checkBalance(req, res, next, contractAddress),
+      (req: Request, res: Response, next: NextFunction) =>
+        runNaturalFunction(req, res, balanceRunMain).catch(next)
+    );
+  }
+
+  return { success: true, data: balanceRunMain };
 };
