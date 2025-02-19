@@ -115,14 +115,21 @@ export default class BalanceExtractService {
       if (processedNFTs.length > 0) {
         for (const nftCosts of processedNFTs) {
           const docRef = db
-            .collection("nft_extract_costs")
+            .collection("nft_extract_costs_" + this.envConfig.env.SUBNET_ID)
             .doc(
               `${nftCosts.accountNFT.collectionID}_${nftCosts.accountNFT.nftID}`
             );
-          batch.update(docRef, {
-            costs: "0",
-            updated_at: admin.firestore.FieldValue.serverTimestamp(),
-          });
+          batch.set(
+            docRef,
+            {
+              collection_id: nftCosts.accountNFT.collectionID,
+              nft_id: nftCosts.accountNFT.nftID,
+              costs: "0",
+              updated_at: admin.firestore.FieldValue.serverTimestamp(),
+              created_at: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true }
+          );
         }
         await batch.commit();
         console.log(`Successfully processed ${processedNFTs.length} NFTs`);
