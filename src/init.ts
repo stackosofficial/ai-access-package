@@ -4,6 +4,7 @@ import { ENVDefinition, NFTCosts } from "./types/types";
 import { APICallReturn } from "@decloudlabs/skynet/lib/types/types";
 import { checkBalance } from "./middleware/checkBalance";
 import { protect } from "./middleware/auth";
+import { parseAuth } from "./middleware/parseAuth";
 import express, { Request, Response, NextFunction } from "express";
 import multer from "multer";
 
@@ -55,6 +56,7 @@ export const initAIAccessPoint = async (
     app.post(
       "/natural-request",
       upload.array("files"),
+      parseAuth,
       protect,
       (req: Request, res: Response, next: NextFunction) =>
         checkBalance(req, res, next, contractAddress),
