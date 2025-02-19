@@ -138,7 +138,7 @@ export default class BalanceExtractService {
     try {
       // Get all NFTs with non-zero costs in one query
       const snapshot = await db
-        .collection("nft_extract_costs")
+        .collection("nft_extract_costs_" + this.envConfig.env.SUBNET_ID)
         .where("costs", ">", "0")
         .get();
 
