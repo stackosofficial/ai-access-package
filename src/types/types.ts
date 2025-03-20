@@ -14,6 +14,8 @@ export interface ENVDefinition {
 export interface NFTCosts {
   accountNFT: AccountNFT;
   costs: string;
+  docId?: string;
+  timestamp?: any;
 }
 
 export interface AIModelResponse {

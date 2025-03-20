@@ -8,6 +8,7 @@ export default class ServerBalanceDatabaseService {
     constructor(envConfig: ENVConfig);
     setup: () => Promise<void>;
     private getCollectionRef;
+    private getHistoryCollectionRef;
     private runTransaction;
     private getNFTId;
     setExtractBalance: (accountNFT: AccountNFT, price: string) => Promise<APICallReturn<number>>;
@@ -21,6 +22,9 @@ export default class ServerBalanceDatabaseService {
         data: Error;
     }>;
     setupDatabase: () => Promise<void>;
+    private createRequiredIndexes;
     update: () => Promise<void>;
     getClient: () => Promise<admin.firestore.Firestore>;
+    getUnappliedCosts: () => Promise<APICallReturn<NFTCosts[]>>;
+    markCostsAsApplied: (docIds: string[]) => Promise<APICallReturn<number>>;
 }

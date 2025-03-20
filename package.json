@@ -1,6 +1,6 @@
 {
   "name": "@decloudlabs/sky-ai-accesspoint",
-  "version": "0.0.57",
+  "version": "0.0.58",
   "description": "AI Access Point API",
   "main": "dist/index.js",
   "publishConfig": {
@@ -12,7 +12,7 @@
     "build": "tsc"
   },
   "dependencies": {
-    "@decloudlabs/skynet": "0.6.12",
+    "@decloudlabs/skynet": "0.6.17",
     "ethers": "^6.13.5",
     "express": "^4.19.2",
     "firebase-admin": "^13.1.0",

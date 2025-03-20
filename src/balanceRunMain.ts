@@ -98,7 +98,7 @@ export default class BalanceRunMain {
 
     const resp = await this.serverBalanceDatabaseService.setExtractBalance(
       accountNFT,
-      cost
+      (BigInt(extractBalanceResp.data?.costs || 0) + BigInt(cost)).toString()
     );
     if (!resp.success) {
       return {

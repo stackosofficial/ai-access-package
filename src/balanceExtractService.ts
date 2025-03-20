@@ -75,37 +75,41 @@ export default class BalanceExtractService {
     const batch = db.batch();
     const processedNFTs: NFTCosts[] = [];
 
+    const nftTimestamps = await getNFTTimestamp(nftCostsBatch, this.envConfig);
+    console.log("NFT timestamps:", nftTimestamps);
+
     try {
+      const resp = await this.retryOperation(() =>
+        addCostToContract(nftCostsBatch, this.envConfig)
+      );
+
+      if (!resp.success) {
+        console.error(
+          `Failed to add cost to contract for NFT: ${JSON.stringify(
+            nftCostsBatch
+          )}`
+        );
+        return;
+      }
+
       for (const nftCosts of nftCostsBatch) {
         if (nftCosts.costs === "0") continue;
 
         // First attempt to add cost to contract
-        const resp = await this.retryOperation(() =>
-          addCostToContract(nftCosts.accountNFT, nftCosts.costs, this.envConfig)
-        );
-
-        if (!resp.success) {
-          console.error(
-            `Failed to add cost to contract for NFT: ${JSON.stringify(
-              nftCosts.accountNFT
-            )}`
-          );
-          continue;
-        }
 
         // Update balance in contract
         const balanceResp = await this.retryOperation(() =>
           updateBalanceInContract(nftCosts.accountNFT, this.envConfig)
         );
 
-        if (!balanceResp.success) {
-          console.error(
-            `Failed to update balance in contract for NFT: ${JSON.stringify(
-              nftCosts.accountNFT
-            )}`
-          );
-          continue;
-        }
+        // if (!balanceResp.success) {
+        //   console.error(
+        //     `Failed to update balance in contract for NFT: ${JSON.stringify(
+        //       nftCosts.accountNFT
+        //     )}`
+        //   );
+        //   continue;
+        // }
 
         // If both contract operations succeed, queue the NFT for database update
         processedNFTs.push(nftCosts);
@@ -182,39 +186,47 @@ export default class BalanceExtractService {
   };
 }
 
-const addCostToContract = async (
-  accountNFT: AccountNFT,
-  price: string,
-  envConfig: ENVConfig
-): Promise<APICallReturn<any>> => {
+const getNFTTimestamp = async (nftCosts: NFTCosts[], envConfig: ENVConfig) => {
   const skyNode: SkyMainNodeJS = getSkyNode();
-  const subnetID = envConfig.env.SUBNET_ID || "";
-
-  const contAddrResp = await skyNode.contractService.callContractRead<
-    string,
-    string
-  >(
-    skyNode.contractService.BalanceSettler.getSubnetPriceCalculator(subnetID),
-    (res) => res
-  );
-
-  if (!contAddrResp.success) return contAddrResp;
-  const contractAddress = contAddrResp.data;
-
-  const provider = new ethers.JsonRpcProvider(envConfig.env.JSON_RPC_PROVIDER);
-  const wallet = new ethers.Wallet(
-    envConfig.env.WALLET_PRIVATE_KEY || "",
-    provider
-  );
 
   const serverCostCalculator = getServerCostCalculator(
     envConfig.env.SERVER_COST_CONTRACT_ADDRESS,
-    wallet
+    skyNode.contractService.signer
   );
 
-  console.log("Adding costs to contract:", accountNFT, price);
+  const response = await skyNode.contractService.callContractRead<
+    BigInt[],
+    number[]
+  >(
+    serverCostCalculator.getLastUpdateTime(
+      nftCosts.map((nftCosts) => nftCosts.accountNFT)
+    ),
+    (res) => res.map((r) => Number(r))
+  );
+
+  console.log("Contract response:", response);
+  return response;
+};
+
+const addCostToContract = async (
+  NFTCosts: NFTCosts[],
+  envConfig: ENVConfig
+): Promise<APICallReturn<any>> => {
+  const skyNode: SkyMainNodeJS = getSkyNode();
+
+  const serverCostCalculator = getServerCostCalculator(
+    envConfig.env.SERVER_COST_CONTRACT_ADDRESS,
+    skyNode.contractService.signer
+  );
+
+  const contractInput = NFTCosts.map((nftCosts) => ({
+    accountNFT: nftCosts.accountNFT,
+    cost: nftCosts.costs,
+  }));
+
+  console.log("Adding costs to contract:", contractInput);
   const response = await skyNode.contractService.callContractWrite(
-    serverCostCalculator.addNFTCosts(accountNFT, price)
+    serverCostCalculator.setNFTCosts(contractInput, true)
   );
 
   console.log("Contract response:", response);
