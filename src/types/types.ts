@@ -1,4 +1,5 @@
 import { AccountNFT } from "@decloudlabs/skynet/lib/types/types";
+import { Request, Response } from "express";
 
 export interface ENVDefinition {
   JSON_RPC_PROVIDER: string;
@@ -20,4 +21,11 @@ export interface NFTCosts {
 
 export interface AIModelResponse {
   content: string;
+}
+
+export interface ResponseHandler {
+  sendUpdate(data: any): void;
+  sendFinalResponse(data: any): void;
+  sendError(error: string | Error, statusCode?: number): void;
+  isStreamingRequest(): boolean;
 }

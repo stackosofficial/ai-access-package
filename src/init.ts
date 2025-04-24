@@ -1,6 +1,6 @@
 import SkyMainNodeJS from "@decloudlabs/skynet/lib/services/SkyMainNodeJS";
 import BalanceRunMain from "./balanceRunMain";
-import { ENVDefinition, NFTCosts } from "./types/types";
+import { ENVDefinition, NFTCosts, ResponseHandler } from "./types/types";
 import { APICallReturn } from "@decloudlabs/skynet/lib/types/types";
 import { checkBalance } from "./middleware/checkBalance";
 import { protect } from "./middleware/auth";
@@ -18,15 +18,105 @@ export const getSkyNode = () => {
   return skyNode;
 };
 
+// Response handler class to unify regular and streaming responses
+export class ResponseHandlerImpl implements ResponseHandler {
+  private req: Request;
+  private res: Response;
+  private isStreaming: boolean;
+  private hasStarted: boolean;
+  private hasEnded: boolean;
+
+  constructor(req: Request, res: Response) {
+    this.req = req;
+    this.res = res;
+    this.isStreaming = req.query.stream === 'true';
+    this.hasStarted = false;
+    this.hasEnded = false;
+    
+    // Setup streaming headers if needed
+    if (this.isStreaming) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+    }
+  }
+
+  // Send partial update (only in streaming mode)
+  sendUpdate(data: any): void {
+    if (!this.isStreaming || this.hasEnded) return;
+    
+    this.hasStarted = true;
+    this.res.write(`data: ${JSON.stringify(data)}\n\n`);
+    // Check if flush exists (some Express response objects include it via compression middleware)
+    if (typeof (this.res as any).flush === 'function') {
+      (this.res as any).flush();
+    }
+  }
+
+  // Send final response and end
+  sendFinalResponse(data: any): void {
+    if (this.hasEnded) return;
+    this.hasEnded = true;
+    
+    if (this.isStreaming) {
+      // Final message for streaming
+      this.res.write(`data: ${JSON.stringify({ ...data, done: true })}\n\n`);
+      this.res.end();
+    } else {
+      // Regular JSON response
+      this.res.json(data);
+    }
+  }
+
+  // Send an error response
+  sendError(error: string | Error, statusCode: number = 500): void {
+    if (this.hasEnded) return;
+    this.hasEnded = true;
+    
+    const errorMessage = typeof error === 'string' ? error : error.message;
+    
+    if (this.isStreaming) {
+      this.res.write(`data: ${JSON.stringify({ error: errorMessage, done: true })}\n\n`);
+      this.res.end();
+    } else {
+      this.res.status(statusCode).json({ error: errorMessage });
+    }
+  }
+
+  // Check if this is a streaming request
+  isStreamingRequest(): boolean {
+    return this.isStreaming;
+  }
+}
+
+// Legacy type for backward compatibility
+export type LegacyRunNaturalFunctionType = (
+  req: Request,
+  res: Response,
+  balanceRunMain: BalanceRunMain
+) => Promise<void>;
+
+// Define the type for the runNaturalFunction parameter to make it explicit
+export type RunNaturalFunctionType = (
+  req: Request,
+  res: Response,
+  balanceRunMain: BalanceRunMain,
+  responseHandler: ResponseHandler
+) => Promise<void>;
+
+// Adapter function to convert legacy function to new function signature
+export function adaptLegacyFunction(legacyFn: LegacyRunNaturalFunctionType): RunNaturalFunctionType {
+  return async (req, res, balanceRunMain, responseHandler) => {
+    // Legacy functions handle the response directly through res
+    return legacyFn(req, res, balanceRunMain);
+  };
+}
+
 export const initAIAccessPoint = async (
   env: ENVDefinition,
   skyNodeParam: SkyMainNodeJS,
   app: express.Application,
-  runNaturalFunction: (
-    req: Request,
-    res: Response,
-    balanceRunMain: BalanceRunMain
-  ) => Promise<void>,
+  runNaturalFunction: RunNaturalFunctionType | LegacyRunNaturalFunctionType,
   runUpdate: boolean,
   upload?: multer.Multer
 ): Promise<APICallReturn<BalanceRunMain>> => {
@@ -53,6 +143,26 @@ export const initAIAccessPoint = async (
       balanceRunMain.update();
     }
 
+    // Adapt the function if it's a legacy function (has 3 parameters)
+    const adaptedFunction: RunNaturalFunctionType = 
+      runNaturalFunction.length <= 3 
+        ? adaptLegacyFunction(runNaturalFunction as LegacyRunNaturalFunctionType)
+        : runNaturalFunction as RunNaturalFunctionType;
+
+    // Handler function that wraps runNaturalFunction with ResponseHandler
+    const handleRequest = async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const responseHandler = new ResponseHandlerImpl(req, res);
+        await adaptedFunction(req, res, balanceRunMain, responseHandler);
+      } catch (error: any) {
+        console.error("Error in request handler:", error);
+        if (!res.headersSent) {
+          res.status(500).json({ error: error.message || "Internal server error" });
+        }
+        next(error);
+      }
+    };
+
     // Setup routes
     if (upload) {
       app.post(
@@ -62,8 +172,7 @@ export const initAIAccessPoint = async (
         protect,
         (req: Request, res: Response, next: NextFunction) =>
           checkBalance(req, res, next, contractAddress),
-        (req: Request, res: Response, next: NextFunction) =>
-          runNaturalFunction(req, res, balanceRunMain).catch(next)
+        handleRequest
       );
     } else {
       app.post(
@@ -71,8 +180,7 @@ export const initAIAccessPoint = async (
         protect,
         (req: Request, res: Response, next: NextFunction) =>
           checkBalance(req, res, next, contractAddress),
-        (req: Request, res: Response, next: NextFunction) =>
-          runNaturalFunction(req, res, balanceRunMain).catch(next)
+        handleRequest
       );
     }
 
