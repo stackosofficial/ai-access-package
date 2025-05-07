@@ -1,6 +1,6 @@
 {
   "name": "@decloudlabs/sky-ai-accesspoint",
-  "version": "0.0.63",
+  "version": "0.0.65",
   "description": "AI Access Point API",
   "main": "dist/index.js",
   "publishConfig": {

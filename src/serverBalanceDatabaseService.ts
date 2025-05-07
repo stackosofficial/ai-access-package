@@ -2,7 +2,7 @@ import { AccountNFT, APICallReturn } from "@decloudlabs/skynet/lib/types/types";
 import { apiCallWrapper } from "@decloudlabs/skynet/lib/utils/utils";
 import ENVConfig from "./envConfig";
 import { NFTCosts } from "./types/types";
-import { Pool, PoolClient } from 'pg';
+import { Pool, PoolClient, QueryResult } from 'pg';
 
 export default class ServerBalanceDatabaseService {
   private envConfig: ENVConfig;
@@ -224,7 +224,13 @@ export default class ServerBalanceDatabaseService {
          ORDER BY created_at DESC`
       );
 
-      const costs: NFTCosts[] = rows.map(item => ({
+      const costs: NFTCosts[] = rows.map((item: { 
+        collection_id: string; 
+        nft_id: string; 
+        costs: string; 
+        id: number; 
+        created_at: Date; 
+      }) => ({
         accountNFT: {
           collectionID: item.collection_id,
           nftID: item.nft_id,
