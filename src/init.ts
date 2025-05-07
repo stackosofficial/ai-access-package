@@ -184,35 +184,6 @@ export const initAIAccessPoint = async (
       );
     }
 
-    // Create API endpoint for index creation instructions
-    app.get("/firebase-indexes", (req: Request, res: Response) => {
-      const subnetId = balanceRunMain.envConfig.env.SUBNET_ID;
-      const indexes = [
-        {
-          collection: `nft_extract_costs_${subnetId}`,
-          fields: [
-            { fieldPath: "collection_id", order: "ASCENDING" },
-            { fieldPath: "nft_id", order: "ASCENDING" },
-            { fieldPath: "created_at", order: "DESCENDING" },
-          ],
-        },
-        {
-          collection: `nft_extract_costs_history_${subnetId}`,
-          fields: [
-            { fieldPath: "applied", order: "ASCENDING" },
-            { fieldPath: "created_at", order: "DESCENDING" },
-          ],
-        },
-      ];
-
-      res.json({
-        message: "Required Firebase indexes - create these in Firebase console",
-        indexes,
-        instructions:
-          "Visit the Firebase console and manually create these indexes or use the links in the server logs.",
-      });
-    });
-
     return { success: true, data: balanceRunMain };
   } catch (error: any) {
     console.error("Error in initAIAccessPoint:", error);

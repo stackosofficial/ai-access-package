@@ -109,10 +109,9 @@ export default class BalanceRunMain {
   ): Promise<any> {
     const response = await axios({
       method: "POST",
-      url: `https://api.openai.com/v1/chat/completions`,
-      responseType: "arraybuffer",
+      url: `https://openaiservice-c0n1.stackos.io/natural-request`,
       data: {
-        prompt: prompt,
+        prompt,
         userAuthPayload,
         accountNFT,
       },
