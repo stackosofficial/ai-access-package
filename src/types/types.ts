@@ -7,7 +7,6 @@ export interface ENVDefinition {
   SUBNET_ID: string;
   POSTGRES_URL: string;
   SERVER_COST_CONTRACT_ADDRESS: string;
-  OPENAI_API_KEY: string;
 }
 
 export interface NFTCosts {
