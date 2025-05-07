@@ -1,6 +1,6 @@
 {
   "name": "@decloudlabs/sky-ai-accesspoint",
-  "version": "0.0.62",
+  "version": "0.0.63",
   "description": "AI Access Point API",
   "main": "dist/index.js",
   "publishConfig": {
@@ -13,7 +13,7 @@
     "test:db": "ts-node dbtest.ts"
   },
   "dependencies": {
-    "@decloudlabs/skynet": "0.6.17",
+    "@decloudlabs/skynet": "0.6.25",
     "@supabase/supabase-js": "^2.49.4",
     "axios": "^1.9.0",
     "ethers": "^6.13.5",

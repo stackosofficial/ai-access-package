@@ -5,8 +5,6 @@ import BalanceExtractService from "./balanceExtractService";
 import ServerBalanceDatabaseService from "./serverBalanceDatabaseService";
 import ENVConfig from "./envConfig";
 import { ethers } from "ethers";
-import { OpenAI } from "openai";
-import { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import axios from "axios";
 
 export default class BalanceRunMain {
@@ -17,7 +15,6 @@ export default class BalanceRunMain {
   serverBalanceDatabaseService: ServerBalanceDatabaseService;
   signer: ethers.Wallet;
   jsonProvider: ethers.JsonRpcProvider;
-  openAI: OpenAI;
 
   constructor(env: ENVDefinition, extractCostTime: number) {
     this.RUN_DURATION = 5000;
@@ -27,7 +24,6 @@ export default class BalanceRunMain {
     this.jsonProvider = new ethers.JsonRpcProvider(
       this.envConfig.env.JSON_RPC_PROVIDER,
       undefined
-      // option,
     );
     console.log("json rpc: ", this.envConfig.env.JSON_RPC_PROVIDER);
 
@@ -44,10 +40,6 @@ export default class BalanceRunMain {
       this.envConfig,
       this.serverBalanceDatabaseService
     );
-
-    this.openAI = new OpenAI({
-      apiKey: this.envConfig.env.OPENAI_API_KEY,
-    });
   }
 
   setup = async () => {
@@ -115,16 +107,6 @@ export default class BalanceRunMain {
     userAuthPayload: UrsulaAuth,
     accountNFT: AccountNFT
   ): Promise<any> {
-    // const completion = await this.openAI.chat.completions.create({
-    //   messages,
-    //   model: "gpt-4o-mini",
-    //   temperature: 0,
-    //   response_format: { type: "json_object" },
-    // });
-
-    // return {
-    //   content: completion.choices[0].message.content || "",
-    // };
     const response = await axios({
       method: "POST",
       url: `https://api.openai.com/v1/chat/completions`,
