@@ -2,44 +2,66 @@ import { AccountNFT, APICallReturn } from "@decloudlabs/skynet/lib/types/types";
 import { apiCallWrapper } from "@decloudlabs/skynet/lib/utils/utils";
 import ENVConfig from "./envConfig";
 import { NFTCosts } from "./types/types";
-import * as admin from "firebase-admin";
-import { Firestore, Transaction } from "firebase-admin/firestore";
+import { Pool, PoolClient } from 'pg';
 
 export default class ServerBalanceDatabaseService {
   private envConfig: ENVConfig;
-  private db: Firestore | null = null;
+  private pool: Pool | null = null;
+  private costsTable: string;
+  private historyTable: string;
 
   constructor(envConfig: ENVConfig) {
     this.envConfig = envConfig;
+    this.costsTable = `nft_extract_costs_${this.envConfig.env.SUBNET_ID}`;
+    this.historyTable = `nft_extract_costs_history_${this.envConfig.env.SUBNET_ID}`;
   }
 
   setup = async () => {
     await this.setupDatabase();
   };
 
-  private getCollectionRef() {
-    if (!this.db) throw new Error("Database not initialized");
-    return this.db.collection(
-      "nft_extract_costs_" + this.envConfig.env.SUBNET_ID
-    );
-  }
-
-  private getHistoryCollectionRef() {
-    if (!this.db) throw new Error("Database not initialized");
-    return this.db.collection(
-      "nft_extract_costs_history_" + this.envConfig.env.SUBNET_ID
-    );
-  }
-
-  private async runTransaction<T>(
-    operation: (transaction: Transaction) => Promise<T>
-  ): Promise<T> {
-    if (!this.db) throw new Error("Database not initialized");
-    return this.db.runTransaction(operation);
-  }
-
   private getNFTId(accountNFT: AccountNFT): string {
     return `${accountNFT.collectionID}_${accountNFT.nftID}`;
+  }
+
+  private async createTables(client: PoolClient) {
+    // Create costs table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ${this.costsTable} (
+        id SERIAL PRIMARY KEY,
+        collection_id TEXT NOT NULL,
+        nft_id TEXT NOT NULL,
+        costs TEXT NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(collection_id, nft_id)
+      );
+      
+      CREATE INDEX IF NOT EXISTS idx_${this.costsTable}_collection_nft 
+      ON ${this.costsTable}(collection_id, nft_id);
+      
+      CREATE INDEX IF NOT EXISTS idx_${this.costsTable}_costs 
+      ON ${this.costsTable}(costs);
+    `);
+
+    // Create history table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ${this.historyTable} (
+        id SERIAL PRIMARY KEY,
+        collection_id TEXT NOT NULL,
+        nft_id TEXT NOT NULL,
+        costs TEXT NOT NULL,
+        applied BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+      
+      CREATE INDEX IF NOT EXISTS idx_${this.historyTable}_applied 
+      ON ${this.historyTable}(applied);
+      
+      CREATE INDEX IF NOT EXISTS idx_${this.historyTable}_created_at 
+      ON ${this.historyTable}(created_at DESC);
+    `);
   }
 
   setExtractBalance = async (
@@ -47,33 +69,36 @@ export default class ServerBalanceDatabaseService {
     price: string
   ): Promise<APICallReturn<number>> => {
     try {
-      // Create a new entry in the history collection with timestamp
-      const historyDocRef = this.getHistoryCollectionRef().doc();
-      const timestamp = admin.firestore.FieldValue.serverTimestamp();
+      if (!this.pool) throw new Error("Database not initialized");
 
-      await historyDocRef.set({
-        collection_id: accountNFT.collectionID,
-        nft_id: accountNFT.nftID,
-        costs: price,
-        applied: false,
-        created_at: timestamp,
-        updated_at: timestamp,
-      });
+      const client = await this.pool.connect();
+      try {
+        await client.query('BEGIN');
 
-      // Also update the current balance in the main collection
-      const docRef = this.getCollectionRef().doc(this.getNFTId(accountNFT));
-      await docRef.set(
-        {
-          collection_id: accountNFT.collectionID,
-          nft_id: accountNFT.nftID,
-          costs: price,
-          updated_at: timestamp,
-          created_at: timestamp,
-        },
-        { merge: true }
-      );
+        // Create a new entry in the history table
+        await client.query(
+          `INSERT INTO ${this.historyTable} (collection_id, nft_id, costs, applied)
+           VALUES ($1, $2, $3, $4)`,
+          [accountNFT.collectionID, accountNFT.nftID, price, false]
+        );
 
-      return { success: true, data: 1 };
+        // Update the current balance in the main table
+        await client.query(
+          `INSERT INTO ${this.costsTable} (collection_id, nft_id, costs)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (collection_id, nft_id) 
+           DO UPDATE SET costs = $3, updated_at = CURRENT_TIMESTAMP`,
+          [accountNFT.collectionID, accountNFT.nftID, price]
+        );
+
+        await client.query('COMMIT');
+        return { success: true, data: 1 };
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
     } catch (error) {
       console.error("Error in setExtractBalance:", error);
       return { success: false, data: error as Error };
@@ -84,30 +109,19 @@ export default class ServerBalanceDatabaseService {
     accountNFT: AccountNFT
   ): Promise<APICallReturn<NFTCosts | null>> => {
     try {
-      // Use a simple query without ordering to avoid index requirements
-      const snapshot = await this.getCollectionRef()
-        .where("collection_id", "==", accountNFT.collectionID)
-        .where("nft_id", "==", accountNFT.nftID)
-        .get();
+      if (!this.pool) throw new Error("Database not initialized");
 
-      if (snapshot.empty) return { success: true, data: null };
+      const { rows } = await this.pool.query(
+        `SELECT * FROM ${this.costsTable}
+         WHERE collection_id = $1 AND nft_id = $2
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [accountNFT.collectionID, accountNFT.nftID]
+      );
 
-      // Get the latest document based on created_at
-      let latestDoc = snapshot.docs[0];
-      let latestTimestamp = latestDoc.data().created_at;
+      if (rows.length === 0) return { success: true, data: null };
 
-      // Process in-memory to find the latest document
-      for (let i = 1; i < snapshot.docs.length; i++) {
-        const doc = snapshot.docs[i];
-        const timestamp = doc.data().created_at;
-
-        if (timestamp && latestTimestamp && timestamp > latestTimestamp) {
-          latestDoc = doc;
-          latestTimestamp = timestamp;
-        }
-      }
-
-      const data = latestDoc.data();
+      const data = rows[0];
       return {
         success: true,
         data: {
@@ -125,185 +139,100 @@ export default class ServerBalanceDatabaseService {
   };
 
   async *getNFTExtractCursor() {
-    const snapshot = await this.getCollectionRef()
-      .where("costs", ">", "0")
-      .get();
+    if (!this.pool) throw new Error("Database not initialized");
 
-    for (const doc of snapshot.docs) {
-      const data = doc.data();
+    const { rows } = await this.pool.query(
+      `SELECT * FROM ${this.costsTable}
+       WHERE costs > '0'`
+    );
+
+    for (const item of rows) {
       yield {
         accountNFT: {
-          collectionID: data.collection_id,
-          nftID: data.nft_id,
+          collectionID: item.collection_id as string,
+          nftID: item.nft_id as string,
         },
-        costs: data.costs,
+        costs: item.costs as string,
       } as NFTCosts;
     }
   }
 
   deleteNFTExtract = async (accountNFTs: AccountNFT[]) => {
     try {
-      const batch = this.db!.batch();
-      for (const nft of accountNFTs) {
-        const docRef = this.getCollectionRef().doc(this.getNFTId(nft));
-        batch.delete(docRef);
+      if (!this.pool) throw new Error("Database not initialized");
+
+      const client = await this.pool.connect();
+      try {
+        await client.query('BEGIN');
+
+        for (const nft of accountNFTs) {
+          await client.query(
+            `DELETE FROM ${this.costsTable}
+             WHERE collection_id = $1 AND nft_id = $2`,
+            [nft.collectionID, nft.nftID]
+          );
+        }
+
+        await client.query('COMMIT');
+        return { success: true, data: accountNFTs.length };
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
       }
-      await batch.commit();
-      return { success: true, data: accountNFTs.length };
     } catch (error) {
       return { success: false, data: error as Error };
     }
   };
 
   setupDatabase = async () => {
-    const { FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY } =
-      this.envConfig.env;
-    if (
-      !FIREBASE_PROJECT_ID ||
-      !FIREBASE_CLIENT_EMAIL ||
-      !FIREBASE_PRIVATE_KEY
-    ) {
-      throw new Error("Firebase credentials not configured");
+    const { POSTGRES_URL } = this.envConfig.env;
+    if (!POSTGRES_URL) {
+      throw new Error("PostgreSQL URL not configured");
     }
 
     try {
-      // Check if Firebase is already initialized
-      if (admin.apps.length === 0) {
-        admin.initializeApp({
-          credential: admin.credential.cert({
-            projectId: FIREBASE_PROJECT_ID,
-            clientEmail: FIREBASE_CLIENT_EMAIL,
-            privateKey: FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
-          }),
-          // Add SSL configuration
-          databaseURL: `https://${FIREBASE_PROJECT_ID}.firebaseio.com`,
-        });
-      }
-
-      this.db = admin.firestore();
-
-      // Configure Firestore settings
-      this.db.settings({
-        ignoreUndefinedProperties: true,
-        ssl: true,
+      this.pool = new Pool({
+        connectionString: POSTGRES_URL,
+        ssl: {
+          rejectUnauthorized: false // Required for some cloud providers
+        }
       });
 
-      // Create required indexes, if they don't exist
-      await this.createRequiredIndexes();
-
-      console.log("Connected to Firebase Firestore");
+      // Test connection and create tables
+      const client = await this.pool.connect();
+      try {
+        await this.createTables(client);
+        console.log("Connected to PostgreSQL and tables are ready");
+      } finally {
+        client.release();
+      }
     } catch (error: any) {
-      console.error("Error initializing Firebase:", error);
-      throw new Error(`Failed to initialize Firebase: ${error.message}`);
+      console.error("Error initializing PostgreSQL:", error);
+      throw new Error(`Failed to initialize PostgreSQL: ${error.message}`);
     }
-  };
-
-  private async createRequiredIndexes() {
-    try {
-      // We can't directly create indexes programmatically in client SDKs
-      // Instead, log instructions about required indexes
-      console.log("Required indexes for Firestore queries:");
-      console.log("1. Collection: nft_extract_costs_[SUBNET_ID]");
-      console.log(
-        "   Fields: collection_id (ASC), nft_id (ASC), created_at (DESC)"
-      );
-      console.log("2. Collection: nft_extract_costs_history_[SUBNET_ID]");
-      console.log("   Fields: applied (ASC), created_at (DESC)");
-
-      // Alternative approach: Attempt to make a test query to trigger index creation
-      // This will fail the first time but output the index creation link
-      const collectionName =
-        "nft_extract_costs_" + this.envConfig.env.SUBNET_ID;
-
-      console.log(`Testing query for collection: ${collectionName}`);
-      try {
-        // This is expected to fail if the index doesn't exist
-        await this.db!.collection(collectionName)
-          .where("collection_id", "==", "test")
-          .where("nft_id", "==", "test")
-          .orderBy("created_at", "desc")
-          .limit(1)
-          .get();
-      } catch (e: any) {
-        if (
-          e.code === 9 &&
-          e.details &&
-          e.details.includes("requires an index")
-        ) {
-          console.log("Index required. Creation link:");
-          console.log(e.details);
-          // Don't throw, this is expected
-        } else {
-          // Unexpected error, log but don't throw
-          console.error("Unexpected error during index testing:", e);
-        }
-      }
-
-      // Try the second collection too
-      const historyCollectionName =
-        "nft_extract_costs_history_" + this.envConfig.env.SUBNET_ID;
-
-      console.log(`Testing query for collection: ${historyCollectionName}`);
-      try {
-        await this.db!.collection(historyCollectionName)
-          .where("applied", "==", false)
-          .orderBy("created_at", "desc")
-          .limit(1)
-          .get();
-      } catch (e: any) {
-        if (
-          e.code === 9 &&
-          e.details &&
-          e.details.includes("requires an index")
-        ) {
-          console.log("Index required. Creation link:");
-          console.log(e.details);
-          // Don't throw, this is expected
-        } else {
-          // Unexpected error, log but don't throw
-          console.error("Unexpected error during index testing:", e);
-        }
-      }
-    } catch (error) {
-      console.error("Error creating indexes:", error);
-      // Don't fail setup because of index creation issues
-    }
-  }
-
-  update = async () => {};
-
-  getClient = async () => {
-    if (!this.db) throw new Error("Database not initialized");
-    return this.db;
   };
 
   getUnappliedCosts = async (): Promise<APICallReturn<NFTCosts[]>> => {
     try {
-      // Use a simpler query to avoid index requirements
-      const snapshot = await this.getHistoryCollectionRef()
-        .where("applied", "==", false)
-        .get();
+      if (!this.pool) throw new Error("Database not initialized");
 
-      const costs: NFTCosts[] = [];
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        costs.push({
-          accountNFT: {
-            collectionID: data.collection_id,
-            nftID: data.nft_id,
-          },
-          costs: data.costs,
-          docId: doc.id,
-          timestamp: data.created_at,
-        });
-      });
+      const { rows } = await this.pool.query(
+        `SELECT * FROM ${this.historyTable}
+         WHERE applied = false
+         ORDER BY created_at DESC`
+      );
 
-      // Sort in memory by timestamp if needed
-      costs.sort((a, b) => {
-        if (!a.timestamp || !b.timestamp) return 0;
-        // Sort in descending order (newest first)
-        return b.timestamp.toDate().getTime() - a.timestamp.toDate().getTime();
-      });
+      const costs: NFTCosts[] = rows.map(item => ({
+        accountNFT: {
+          collectionID: item.collection_id,
+          nftID: item.nft_id,
+        },
+        costs: item.costs,
+        docId: item.id.toString(),
+        timestamp: item.created_at,
+      }));
 
       return { success: true, data: costs };
     } catch (error) {
@@ -316,32 +245,17 @@ export default class ServerBalanceDatabaseService {
     docIds: string[]
   ): Promise<APICallReturn<number>> => {
     try {
-      if (docIds.length === 0) {
-        return { success: true, data: 0 };
-      }
+      if (!this.pool) throw new Error("Database not initialized");
+      if (docIds.length === 0) return { success: true, data: 0 };
 
-      // Use batches to update documents efficiently
-      const batchSize = 500; // Firestore maximum batch size
-      const batches = [];
+      const { rowCount } = await this.pool.query(
+        `UPDATE ${this.historyTable}
+         SET applied = true, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ANY($1)`,
+        [docIds]
+      );
 
-      for (let i = 0; i < docIds.length; i += batchSize) {
-        const batch = this.db!.batch();
-        const chunk = docIds.slice(i, i + batchSize);
-
-        for (const docId of chunk) {
-          const docRef = this.getHistoryCollectionRef().doc(docId);
-          batch.update(docRef, {
-            applied: true,
-            updated_at: admin.firestore.FieldValue.serverTimestamp(),
-          });
-        }
-
-        batches.push(batch.commit());
-      }
-
-      await Promise.all(batches);
-      console.log(`Marked ${docIds.length} costs as applied`);
-      return { success: true, data: docIds.length };
+      return { success: true, data: rowCount || 0 };
     } catch (error) {
       console.error("Error in markCostsAsApplied:", error);
       return { success: false, data: error as Error };

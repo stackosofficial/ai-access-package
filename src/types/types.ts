@@ -5,9 +5,7 @@ export interface ENVDefinition {
   JSON_RPC_PROVIDER: string;
   WALLET_PRIVATE_KEY: string;
   SUBNET_ID: string;
-  FIREBASE_PROJECT_ID: string;
-  FIREBASE_CLIENT_EMAIL: string;
-  FIREBASE_PRIVATE_KEY: string;
+  POSTGRES_URL: string;
   SERVER_COST_CONTRACT_ADDRESS: string;
   OPENAI_API_KEY: string;
 }
