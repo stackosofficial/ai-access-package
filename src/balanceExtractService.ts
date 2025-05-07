@@ -6,7 +6,6 @@ import ENVConfig from "./envConfig";
 import ServerBalanceDatabaseService from "./serverBalanceDatabaseService";
 import { getServerCostCalculator } from "./utils";
 import { getSkyNode } from "./init";
-import * as admin from "firebase-admin";
 import { DatabaseWriterExecution } from "./databaseWriterExecution";
 
 const NFT_UPDATE_INTERVAL = 1 * 60 * 1000; // 1 minute
@@ -68,11 +67,7 @@ export default class BalanceExtractService {
     // await this.databaseWriter.insert(nftCosts);
   };
 
-  private async processBatch(
-    nftCostsBatch: NFTCosts[],
-    db: any
-  ): Promise<void> {
-    const batch = db.batch();
+  private async processBatch(nftCostsBatch: NFTCosts[]): Promise<void> {
     const processedNFTs: NFTCosts[] = [];
 
     const nftTimestamps = await getNFTTimestamp(nftCostsBatch, this.envConfig);
@@ -95,47 +90,23 @@ export default class BalanceExtractService {
       for (const nftCosts of nftCostsBatch) {
         if (nftCosts.costs === "0") continue;
 
-        // First attempt to add cost to contract
-
         // Update balance in contract
         const balanceResp = await this.retryOperation(() =>
           updateBalanceInContract(nftCosts.accountNFT, this.envConfig)
         );
 
-        // if (!balanceResp.success) {
-        //   console.error(
-        //     `Failed to update balance in contract for NFT: ${JSON.stringify(
-        //       nftCosts.accountNFT
-        //     )}`
-        //   );
-        //   continue;
-        // }
-
-        // If both contract operations succeed, queue the NFT for database update
+        // If contract operations succeed, queue the NFT for database update
         processedNFTs.push(nftCosts);
       }
 
-      // Update all successful NFTs in one batch
+      // Update all successful NFTs in database
       if (processedNFTs.length > 0) {
         for (const nftCosts of processedNFTs) {
-          const docRef = db
-            .collection("nft_extract_costs_" + this.envConfig.env.SUBNET_ID)
-            .doc(
-              `${nftCosts.accountNFT.collectionID}_${nftCosts.accountNFT.nftID}`
-            );
-          batch.set(
-            docRef,
-            {
-              collection_id: nftCosts.accountNFT.collectionID,
-              nft_id: nftCosts.accountNFT.nftID,
-              costs: "0",
-              updated_at: admin.firestore.FieldValue.serverTimestamp(),
-              created_at: admin.firestore.FieldValue.serverTimestamp(),
-            },
-            { merge: true }
+          await this.databaseService.setExtractBalance(
+            nftCosts.accountNFT,
+            "0" // Reset costs to 0 after processing
           );
         }
-        await batch.commit();
         console.log(`Successfully processed ${processedNFTs.length} NFTs`);
       }
     } catch (error) {
@@ -145,27 +116,18 @@ export default class BalanceExtractService {
   }
 
   private scanNFTBalancesInternal = async () => {
-    const db = await this.databaseService.getClient();
     try {
-      // Get all NFTs with non-zero costs in one query
-      const snapshot = await db
-        .collection("nft_extract_costs_" + this.envConfig.env.SUBNET_ID)
-        .where("costs", ">", "0")
-        .get();
-
-      const nftCosts = snapshot.docs.map((doc) => ({
-        accountNFT: {
-          collectionID: doc.data().collection_id,
-          nftID: doc.data().nft_id,
-        },
-        costs: doc.data().costs,
-      }));
+      // Get all NFTs with non-zero costs using the cursor
+      const nftCosts: NFTCosts[] = [];
+      for await (const nftCost of this.databaseService.getNFTExtractCursor()) {
+        nftCosts.push(nftCost);
+      }
 
       // Process in batches
       for (let i = 0; i < nftCosts.length; i += BATCH_SIZE) {
         const batch = nftCosts.slice(i, i + BATCH_SIZE);
         try {
-          await this.processBatch(batch, db);
+          await this.processBatch(batch);
         } catch (error) {
           console.error(
             `Failed to process batch starting at index ${i}:`,
@@ -179,7 +141,9 @@ export default class BalanceExtractService {
     }
   };
 
-  setup = async () => {};
+  setup = async () => {
+    await this.databaseService.setup();
+  };
 
   update = async () => {
     await this.databaseWriter.execute();
@@ -248,6 +212,5 @@ const updateBalanceInContract = async (
     )
   );
 
-  console.log("Balance update response:", resp);
   return resp;
 };

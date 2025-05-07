@@ -1,5 +1,5 @@
 import { AIModelResponse, ENVDefinition } from "./types/types";
-import { AccountNFT, APICallReturn } from "@decloudlabs/skynet/lib/types/types";
+import { AccountNFT, APICallReturn, UrsulaAuth } from "@decloudlabs/skynet/lib/types/types";
 import { sleep } from "@decloudlabs/skynet/lib/utils/utils";
 import BalanceExtractService from "./balanceExtractService";
 import ServerBalanceDatabaseService from "./serverBalanceDatabaseService";
@@ -7,6 +7,7 @@ import ENVConfig from "./envConfig";
 import { ethers } from "ethers";
 import { OpenAI } from "openai";
 import { ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import axios from "axios";
 
 export default class BalanceRunMain {
   RUN_DURATION: number;
@@ -110,17 +111,33 @@ export default class BalanceRunMain {
   };
 
   async callAIModel(
-    messages: ChatCompletionMessageParam[]
-  ): Promise<AIModelResponse> {
-    const completion = await this.openAI.chat.completions.create({
-      messages,
-      model: "gpt-4o-mini",
-      temperature: 0,
-      response_format: { type: "json_object" },
-    });
+    prompt: string,
+    userAuthPayload: UrsulaAuth,
+    accountNFT: AccountNFT
+  ): Promise<any> {
+    // const completion = await this.openAI.chat.completions.create({
+    //   messages,
+    //   model: "gpt-4o-mini",
+    //   temperature: 0,
+    //   response_format: { type: "json_object" },
+    // });
 
-    return {
-      content: completion.choices[0].message.content || "",
-    };
+    // return {
+    //   content: completion.choices[0].message.content || "",
+    // };
+    const response = await axios({
+      method: "POST",
+      url: `https://api.openai.com/v1/chat/completions`,
+      responseType: "arraybuffer",
+      data: {
+        prompt: prompt,
+        userAuthPayload,
+        accountNFT,
+      },
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+    return response.data;
   }
 }
