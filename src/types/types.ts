@@ -26,3 +26,27 @@ export interface ResponseHandler {
   sendError(error: string | Error, statusCode?: number): void;
   isStreamingRequest(): boolean;
 }
+
+export interface SupabaseConfig {
+  supabaseUrl: string;
+  supabaseKey: string;
+  jwtSecret?: string;
+}
+
+export interface ApiKeyConfig extends SupabaseConfig {
+  enabled: boolean;
+}
+
+export interface ApiKeyResponse {
+  apiKey?: string;
+  error?: string;
+}
+
+/**
+ * Information about an authenticated wallet's token
+ */
+export interface AuthTokenInfo {
+  token: string;
+  authenticatedAt: string;
+  expiresAt: string;
+}

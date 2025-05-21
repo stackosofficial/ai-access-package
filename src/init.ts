@@ -1,10 +1,12 @@
 import SkyMainNodeJS from "@decloudlabs/skynet/lib/services/SkyMainNodeJS";
 import BalanceRunMain from "./balanceRunMain";
-import { ENVDefinition, NFTCosts, ResponseHandler } from "./types/types";
+import { ENVDefinition, NFTCosts, ResponseHandler, ApiKeyConfig } from "./types/types";
 import { APICallReturn } from "@decloudlabs/skynet/lib/types/types";
 import { checkBalance } from "./middleware/checkBalance";
 import { protect } from "./middleware/auth";
 import { parseAuth } from "./middleware/parseAuth";
+import { validateApiKey } from "./middleware/validateApiKey";
+import { ApiKeyService } from "./apiKeyService";
 import express, { Request, Response, NextFunction } from "express";
 import multer from "multer";
 
@@ -112,7 +114,45 @@ export function adaptLegacyFunction(legacyFn: LegacyRunNaturalFunctionType): Run
   };
 }
 
+// Add custom type for extended Request
+interface ExtendedRequest extends Request {
+  user?: {
+    id: string;
+    wallet?: string;
+  };
+}
+
+export interface AIAccessPointConfig {
+  apiKeyConfig?: ApiKeyConfig;
+}
+
 export const initAIAccessPoint = async (
+  env: ENVDefinition,
+  skyNodeParam: SkyMainNodeJS,
+  config?: AIAccessPointConfig
+): Promise<{
+  balanceRunMain: BalanceRunMain;
+  apiKeyService?: ApiKeyService;
+}> => {
+  try {
+    await setupSkyNode(skyNodeParam);
+    const balanceRunMain = new BalanceRunMain(env, 60 * 1000);
+
+    // Initialize API key service if config is provided
+    let apiKeyService: ApiKeyService | undefined;
+    if (config?.apiKeyConfig?.enabled) {
+      apiKeyService = new ApiKeyService(config.apiKeyConfig);
+      await apiKeyService.setupTables();
+      }
+
+    return { balanceRunMain, apiKeyService };
+  } catch (error) {
+    console.error('Error initializing AI Access Point:', error);
+    throw error;
+  }
+};
+
+export const initAIAccessPointWithApp = async (
   env: ENVDefinition,
   skyNodeParam: SkyMainNodeJS,
   app: express.Application,
