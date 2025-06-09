@@ -1,10 +1,25 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { ApiKeyConfig, ApiKeyResponse, AuthTokenInfo } from './types/types';
+
+// Define ApiKeyData type based on the structure of your api_keys table
+export type ApiKeyData = {
+  id: string;
+  key: string;
+  wallet_address: string;
+  nft_collection_id?: string;
+  nft_id?: string;
+  is_active: boolean;
+  created_at: string;
+  revoked_at?: string | null;
+  last_used_at?: string | null;
+};
 import jwt from 'jsonwebtoken';
 import { ServiceManagement, ServiceDetails } from './serviceManagement';
 import { getSkyNode } from './init';
 import SkyMainNodeJS from '@decloudlabs/skynet/lib/services/SkyMainNodeJS';
 import SkyUrsulaService from '@decloudlabs/skynet/lib/services/SkyUrsulaService';
+
+
 
 // Store authenticated wallet addresses
 const authenticatedWallets: Record<string, AuthTokenInfo> = {};
@@ -90,14 +105,16 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;`);
       // SQL query for creating tables
       const sqlQuery = `
         CREATE TABLE IF NOT EXISTS api_keys (
-          id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-          key TEXT NOT NULL UNIQUE,
-          wallet_address TEXT NOT NULL,
-          is_active BOOLEAN NOT NULL DEFAULT true,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          revoked_at TIMESTAMPTZ,
-          last_used_at TIMESTAMPTZ
-        );
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        key TEXT NOT NULL UNIQUE,
+        wallet_address TEXT NOT NULL,
+        nft_collection_id TEXT,
+        nft_id TEXT,
+        is_active BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        revoked_at TIMESTAMPTZ,
+        last_used_at TIMESTAMPTZ
+      );
         
         CREATE INDEX IF NOT EXISTS api_keys_key_idx ON api_keys(key);
         CREATE INDEX IF NOT EXISTS api_keys_wallet_idx ON api_keys(wallet_address);
@@ -179,6 +196,51 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;`);
       throw new Error(`Failed to set up API key tables: ${error.message}`);
     }
   }
+  //new 
+ async getApiKeyDetails(apiKey: string): Promise<ApiKeyData | null> {
+  try {
+    // Log the API key being checked
+    console.log('Fetching details for API key:', apiKey);
+
+    const { data, error } = await this.supabase
+      .from('api_keys')
+      .select('*')
+      .eq('key', apiKey)
+      .eq('is_active', true)
+      .single();
+
+    if (error) {
+      console.error('Error fetching API key details:', error);
+      throw error;
+    }
+
+    if (!data) {
+      console.error('No data found for API key');
+      return null;
+    }
+
+    // Log the retrieved data
+    console.log('Retrieved API key details:', {
+      wallet_address: data.wallet_address,
+      nft_collection_id: data.nft_collection_id,
+      nft_id: data.nft_id
+    });
+
+    // Validate required fields
+    if (!data.nft_collection_id || !data.nft_id) {
+      console.error('API key missing NFT details:', {
+        nft_collection_id: data.nft_collection_id,
+        nft_id: data.nft_id
+      });
+      return null;
+    }
+
+    return data as ApiKeyData;
+  } catch (error) {
+    console.error('Error getting API key details:', error);
+    return null;
+  }
+}
 
   async authenticateUser(address: string, signature: string, message: string): Promise<{ token: string }> {
     if (!this.config.enabled) {
@@ -291,41 +353,52 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;`);
    * Generate API key for a wallet address, but only if it has been authenticated
    * @param walletAddress The wallet address to generate an API key for
    * @param token Optional JWT token for verification
-   */
-  async generateApiKey(walletAddress: string, token?: string): Promise<ApiKeyResponse> {
-    if (!this.config.enabled) {
-      return { error: 'API key functionality is not enabled' };
-    }
-
-    try {
-      // Verify the wallet has been authenticated
-      if (!this.isAuthenticated(walletAddress, token)) {
-        return { error: 'Wallet address must be authenticated with SkyNet before generating an API key' };
-      }
-
-      // Check for existing active key
-      const existingKey = await this.getApiKey(walletAddress);
-      if (existingKey.apiKey) {
-        return existingKey;
-      }
-
-      const apiKey = this.createUniqueApiKey(walletAddress);
-      
-      const { error } = await this.supabase
-        .from('api_keys')
-        .insert([{ 
-          key: apiKey, 
-          wallet_address: walletAddress.toLowerCase(),
-          is_active: true
-        }]);
-
-      if (error) throw error;
-
-      return { apiKey };
-    } catch (error: any) {
-      return { error: `Failed to generate API key: ${error.message}` };
-    }
+   */  // Update generateApiKey to include NFT data
+async generateApiKey(walletAddress: string, token?: string, collectionID?: string, nftID?: string): Promise<ApiKeyResponse> {
+  if (!this.config.enabled) {
+    return { error: 'API key functionality is not enabled' };
   }
+
+  try {
+    // Verify the wallet has been authenticated
+    if (!this.isAuthenticated(walletAddress, token)) {
+      return { error: 'Wallet address must be authenticated before generating an API key' };
+    }
+    // First check for existing active key
+      const { data: existingKey, error: existingKeyError } = await this.supabase
+        .from('api_keys')
+        .select('key')
+        .eq('wallet_address', walletAddress.toLowerCase())
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (existingKeyError) {
+        throw existingKeyError;
+      }
+
+      // If an active key exists, return it instead of generating a new one
+      if (existingKey?.key) {
+        return { apiKey: existingKey.key };
+      }
+      
+    const apiKey = this.createUniqueApiKey(walletAddress);
+      const { error } = await this.supabase
+      .from('api_keys')
+      .insert([{ 
+        key: apiKey, 
+        wallet_address: walletAddress.toLowerCase(),
+        nft_collection_id: collectionID || this.config.collectionId,
+        nft_id: nftID || null, // Use provided NFT ID or null, not wallet address
+        is_active: true
+      }]);
+
+    if (error) throw error;
+
+    return { apiKey };
+  } catch (error: any) {
+    return { error: `Failed to generate API key: ${error.message}` };
+  }
+}
 
   async getApiKey(walletAddress: string): Promise<ApiKeyResponse> {
     if (!this.config.enabled) {

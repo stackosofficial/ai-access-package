@@ -42,6 +42,19 @@ export class ResponseHandlerImpl implements ResponseHandler {
       res.setHeader('Connection', 'keep-alive');
     }
   }
+  // Send a successful response (for compatibility with some interfaces)
+  sendSuccess(res: Response = this.res, data: any, statusCode: number = 200): void {
+    if (this.hasEnded) return;
+    this.hasEnded = true;
+
+    if (this.isStreaming) {
+      // In streaming mode, treat as final response
+      res.write(`data: ${JSON.stringify({ ...data, done: true })}\n\n`);
+      res.end();
+    } else {
+      res.status(statusCode).json(data);
+    }
+  }
 
   // Send partial update (only in streaming mode)
   sendUpdate(data: any): void {
@@ -126,7 +139,7 @@ export interface AIAccessPointConfig {
   apiKeyConfig?: ApiKeyConfig;
 }
 
-export const initAIAccessPoint = async (
+export const initAIAccessPointWithApp = async (
   env: ENVDefinition,
   skyNodeParam: SkyMainNodeJS,
   config?: AIAccessPointConfig
@@ -152,7 +165,7 @@ export const initAIAccessPoint = async (
   }
 };
 
-export const initAIAccessPointWithApp = async (
+export const initAIAccessPoint = async (
   env: ENVDefinition,
   skyNodeParam: SkyMainNodeJS,
   app: express.Application,
