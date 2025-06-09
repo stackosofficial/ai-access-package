@@ -25,8 +25,7 @@ export interface ResponseHandler {
   sendFinalResponse(data: any): void;
   sendError(error: string | Error, statusCode?: number): void;
   isStreamingRequest(): boolean;
-  sendSuccess(res: any, data: any, statusCode?: number): void;
-  // sendError(res: any, error: string | Error, statusCode?: number): void;
+
 }
 
 export interface SupabaseConfig {

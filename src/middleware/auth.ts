@@ -45,7 +45,7 @@ export const protect = async (
     if (!userAuthPayload) {
       return res.status(401).json({
         success: false,
-        message: "Unauthorized: Missing userAuthPayload",
+        data: new Error("Not authorized to access this route"),
       });
     }
 
@@ -70,17 +70,18 @@ export const protect = async (
     if (userAddress.toLowerCase() !== extractedAddress.toLowerCase()) {
       return res.status(401).json({
         success: false,
-        message: "Unauthorized: Signature is invalid",
+        data: new Error("Signature is invalid").toString(),
       });
     }
 
     console.log(" Signature-based auth passed");
     return next();
   } catch (err: any) {
+     const error: Error = err;
     console.error(" Error in protect middleware:", err);
     return res.status(500).json({
       success: false,
-      message: err instanceof Error ? err.message : "Auth error",
+      data: error.toString(),
     });
   }
 };

@@ -42,20 +42,6 @@ export class ResponseHandlerImpl implements ResponseHandler {
       res.setHeader('Connection', 'keep-alive');
     }
   }
-  // Send a successful response (for compatibility with some interfaces)
-  sendSuccess(res: Response = this.res, data: any, statusCode: number = 200): void {
-    if (this.hasEnded) return;
-    this.hasEnded = true;
-
-    if (this.isStreaming) {
-      // In streaming mode, treat as final response
-      res.write(`data: ${JSON.stringify({ ...data, done: true })}\n\n`);
-      res.end();
-    } else {
-      res.status(statusCode).json(data);
-    }
-  }
-
   // Send partial update (only in streaming mode)
   sendUpdate(data: any): void {
     if (!this.isStreaming || this.hasEnded) return;
