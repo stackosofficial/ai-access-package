@@ -25,4 +25,44 @@ export interface ResponseHandler {
   sendFinalResponse(data: any): void;
   sendError(error: string | Error, statusCode?: number): void;
   isStreamingRequest(): boolean;
+
+}
+
+export interface SupabaseConfig {
+  supabaseUrl: string;
+  supabaseKey: string;
+  jwtSecret?: string;
+}
+
+export interface ApiKeyConfig extends SupabaseConfig {
+  enabled: boolean;
+  collectionId?: string;
+}
+
+export interface ApiKeyResponse {
+  apiKey?: string;
+  error?: string;
+}
+
+/**
+ * Information about an authenticated wallet's token
+ */
+export interface AuthTokenInfo {
+  token: string;
+  authenticatedAt: string;
+  expiresAt: string;
+}
+
+//extra
+export interface ApiKeyData {
+  key: string;
+  wallet_address: string;
+  nft_collection_id?: string;
+  nft_id?: string;
+  created_at: Date;
+}
+
+export interface IApiKeyService {
+  validateApiKey: (apiKey: string) => Promise<boolean>;
+  getApiKeyDetails: (apiKey: string) => Promise<ApiKeyData>;
 }
