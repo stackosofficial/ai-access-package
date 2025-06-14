@@ -135,7 +135,7 @@ export const initAIAccessPointWithApp = async (
 }> => {
   try {
     await setupSkyNode(skyNodeParam);
-    const balanceRunMain = new BalanceRunMain(env, 60 * 1000);
+    const balanceRunMain = new BalanceRunMain(env, 60 * 1000, skyNodeParam);
 
     // Initialize API key service if config is provided
     let apiKeyService: ApiKeyService | undefined;
@@ -161,7 +161,7 @@ export const initAIAccessPoint = async (
 ): Promise<APICallReturn<BalanceRunMain>> => {
   try {
     await setupSkyNode(skyNodeParam);
-    const balanceRunMain = new BalanceRunMain(env, 60 * 1000);
+    const balanceRunMain = new BalanceRunMain(env, 60 * 1000, skyNodeParam);
 
     const contAddrResp = await skyNode.contractService.callContractRead<
       string,
