@@ -6,6 +6,7 @@ import ServerBalanceDatabaseService from "./serverBalanceDatabaseService";
 import ENVConfig from "./envConfig";
 import { ethers } from "ethers";
 import axios from "axios";
+import SkyMainNodeJS from "@decloudlabs/skynet/lib/services/SkyMainNodeJS";
 
 export default class BalanceRunMain {
   RUN_DURATION: number;
@@ -15,8 +16,9 @@ export default class BalanceRunMain {
   serverBalanceDatabaseService: ServerBalanceDatabaseService;
   signer: ethers.Wallet;
   jsonProvider: ethers.JsonRpcProvider;
+  skyNode: SkyMainNodeJS;
 
-  constructor(env: ENVDefinition, extractCostTime: number) {
+  constructor(env: ENVDefinition, extractCostTime: number, skyNode: SkyMainNodeJS) {
     this.RUN_DURATION = 5000;
     this.envConfig = new ENVConfig(env);
     this.nextRunTime = new Date().getTime();
@@ -40,6 +42,7 @@ export default class BalanceRunMain {
       this.envConfig,
       this.serverBalanceDatabaseService
     );
+    this.skyNode = skyNode;
   }
 
   setup = async () => {
@@ -103,16 +106,36 @@ export default class BalanceRunMain {
   };
 
   async callAIModel(
-    prompt: string,
-    userAuthPayload: UrsulaAuth,
-    accountNFT: AccountNFT
+    prompt: string
   ): Promise<any> {
+    const skyNode = this.skyNode;
+    if(!skyNode){
+      return {
+        success: false,
+        data: new Error("SkyNode not initialized"),
+      };
+    }
+
+    const userAuthPayload = await skyNode.appManager.getUrsulaAuth();
+    const accountNFT: AccountNFT = {
+      collectionID: "0",
+      nftID: "0"
+    }
+
+    if(!userAuthPayload.success){
+      return {
+        success: false,
+        data: new Error("Failed to get user auth payload"),
+      };
+    }
+
+    // const signature = await s
     const response = await axios({
       method: "POST",
       url: `https://openaiservice-c0n1.stackos.io/natural-request`,
       data: {
         prompt,
-        userAuthPayload,
+        userAuthPayload: userAuthPayload.data,
         accountNFT,
       },
       headers: {

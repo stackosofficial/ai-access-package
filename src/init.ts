@@ -135,7 +135,7 @@ export const initAIAccessPointWithApp = async (
 }> => {
   try {
     await setupSkyNode(skyNodeParam);
-    const balanceRunMain = new BalanceRunMain(env, 60 * 1000);
+    const balanceRunMain = new BalanceRunMain(env, 60 * 1000, skyNodeParam);
 
     // Initialize API key service if config is provided
     let apiKeyService: ApiKeyService | undefined;
@@ -157,11 +157,12 @@ export const initAIAccessPoint = async (
   app: express.Application,
   runNaturalFunction: RunNaturalFunctionType | LegacyRunNaturalFunctionType,
   runUpdate: boolean,
-  upload?: multer.Multer
+  upload?: multer.Multer,
+  apiKeyConfig?: ApiKeyConfig
 ): Promise<APICallReturn<BalanceRunMain>> => {
   try {
     await setupSkyNode(skyNodeParam);
-    const balanceRunMain = new BalanceRunMain(env, 60 * 1000);
+    const balanceRunMain = new BalanceRunMain(env, 60 * 1000, skyNodeParam);
 
     const contAddrResp = await skyNode.contractService.callContractRead<
       string,
@@ -180,6 +181,55 @@ export const initAIAccessPoint = async (
     await balanceRunMain.setup();
     if (runUpdate) {
       balanceRunMain.update();
+    }
+
+    // API Key Service setup
+    let apiKeyService: ApiKeyService | undefined;
+    if (apiKeyConfig && apiKeyConfig.enabled) {
+      apiKeyService = new ApiKeyService(apiKeyConfig);
+      await apiKeyService.setupTables();
+      (global as any).apiKeyService = apiKeyService;
+
+      // Register API key endpoints only if apiKeyService is defined
+      if (apiKeyService) {
+        app.post('/api/generate-key', async (req: Request, res: Response) => {
+          try {
+            const { address, signature, message, collectionID, nftID } = req.body;
+            if (!address || !signature || !message) {
+              return res.status(400).json({ error: 'Missing required parameters' });
+            }
+            const authResult = await apiKeyService!.authenticateUser(address, signature, message);
+            if (authResult.token) {
+              const keyResult = await apiKeyService!.generateApiKey(address, authResult.token, collectionID, nftID);
+              if (keyResult.error) {
+                return res.status(400).json({ error: keyResult.error });
+              }
+              return res.json({ success: true, apiKey: keyResult.apiKey });
+            }
+            return res.status(401).json({ error: 'Authentication failed' });
+          } catch (error: any) {
+            console.error('Error generating API key:', error);
+            return res.status(500).json({ error: error.message || 'Internal server error' });
+          }
+        });
+
+        app.get('/api/validate-key', async (req: Request, res: Response) => {
+          try {
+            const apiKey = req.headers['x-api-key'];
+            if (!apiKey || typeof apiKey !== 'string') {
+              return res.status(400).json({ error: 'Missing API key' });
+            }
+            const isValid = await apiKeyService!.validateApiKey(apiKey);
+            if (!isValid) {
+              return res.status(401).json({ error: 'Invalid API key' });
+            }
+            return res.json({ success: true, valid: true, message: 'API key is valid' });
+          } catch (error: any) {
+            console.error('Error validating API key:', error);
+            return res.status(500).json({ error: error.message || 'Error validating API key' });
+          }
+        });
+      }
     }
 
     // Adapt the function if it's a legacy function (has 3 parameters)
