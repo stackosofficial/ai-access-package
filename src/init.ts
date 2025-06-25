@@ -7,10 +7,12 @@ import { protect } from "./middleware/auth";
 import { parseAuth } from "./middleware/parseAuth";
 import { validateApiKey } from "./middleware/validateApiKey";
 import { ApiKeyService } from "./apiKeyService";
+import { createSocketIOIntegration, SocketIOConfig } from "./websocket/socketIOManager";
 import express, { Request, Response, NextFunction } from "express";
 import multer from "multer";
 
 let skyNode: SkyMainNodeJS;
+let socketIOIntegration: any = null;
 
 export const setupSkyNode = async (skyNodeParam: SkyMainNodeJS) => {
   skyNode = skyNodeParam;
@@ -123,6 +125,11 @@ interface ExtendedRequest extends Request {
 
 export interface AIAccessPointConfig {
   apiKeyConfig?: ApiKeyConfig;
+  socketIOPath?: string;
+  socketIOCors?: {
+    origin: string | string[];
+    methods: string[];
+  };
 }
 
 export const initAIAccessPointWithApp = async (
@@ -157,7 +164,8 @@ export const initAIAccessPoint = async (
   app: express.Application,
   runNaturalFunction: RunNaturalFunctionType | LegacyRunNaturalFunctionType,
   runUpdate: boolean,
-  upload?: multer.Multer
+  upload?: multer.Multer,
+  config?: AIAccessPointConfig
 ): Promise<APICallReturn<BalanceRunMain>> => {
   try {
     await setupSkyNode(skyNodeParam);
@@ -182,11 +190,41 @@ export const initAIAccessPoint = async (
       balanceRunMain.update();
     }
 
+    // Initialize Socket.IO integration (enabled by default)
+    try {
+      const socketIOConfig: SocketIOConfig = {
+        path: config?.socketIOPath || '/socket.io',
+        cors: config?.socketIOCors || {
+          origin: '*',
+          methods: ['GET', 'POST']
+        }
+      };
+
+      socketIOIntegration = createSocketIOIntegration(balanceRunMain, socketIOConfig);
+      
+      // Get the HTTP server from the Express app
+      const server = (app as any).server || (app as any)._server;
+      if (server) {
+        await socketIOIntegration.initialize(server);
+        console.log(`Socket.IO server initialized on path: ${socketIOConfig.path}`);
+      } else {
+        console.warn('Could not initialize Socket.IO: No HTTP server found. Socket.IO will be available after app.listen() is called.');
+      }
+    } catch (socketIOError) {
+      console.warn('Socket.IO initialization failed:', socketIOError);
+      // Continue without Socket.IO - it's optional
+    }
+
     // Adapt the function if it's a legacy function (has 3 parameters)
     const adaptedFunction: RunNaturalFunctionType = 
       runNaturalFunction.length <= 3 
         ? adaptLegacyFunction(runNaturalFunction as LegacyRunNaturalFunctionType)
         : runNaturalFunction as RunNaturalFunctionType;
+
+    // Set the natural function in Socket.IO manager for processing
+    if (socketIOIntegration) {
+      socketIOIntegration.setNaturalRequestFunction(adaptedFunction);
+    }
 
     // Handler function that wraps runNaturalFunction with ResponseHandler
     const handleRequest = async (req: Request, res: Response, next: NextFunction) => {
@@ -232,3 +270,6 @@ export const initAIAccessPoint = async (
     };
   }
 };
+
+// Export Socket.IO integration for advanced usage (optional)
+export const getSocketIOIntegration = () => socketIOIntegration;
