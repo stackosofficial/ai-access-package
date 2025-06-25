@@ -1,4 +1,4 @@
-import { TaskUpdate } from './websocketManager';
+import { TaskUpdate } from './socketIOManager';
 
 export interface TaskInfo {
   id: string;
