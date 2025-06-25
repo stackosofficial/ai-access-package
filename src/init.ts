@@ -42,6 +42,7 @@ export class ResponseHandlerImpl implements ResponseHandler {
       res.setHeader('Connection', 'keep-alive');
     }
   }
+
   // Send partial update (only in streaming mode)
   sendUpdate(data: any): void {
     if (!this.isStreaming || this.hasEnded) return;
@@ -125,7 +126,7 @@ export interface AIAccessPointConfig {
   apiKeyConfig?: ApiKeyConfig;
 }
 
-export const initAIAccessPointWithApp = async (
+export const initAIAccessPoint = async (
   env: ENVDefinition,
   skyNodeParam: SkyMainNodeJS,
   config?: AIAccessPointConfig
