@@ -10,6 +10,8 @@ import { ApiKeyService } from "./apiKeyService";
 import { createSocketIOIntegration, SocketIOConfig } from "./websocket/socketIOManager";
 import express, { Request, Response, NextFunction } from "express";
 import multer from "multer";
+import { sendAuthLink, checkAuthStatus, initAuthTable } from "./services/authService";
+import { Pool } from "pg";
 
 let skyNode: SkyMainNodeJS;
 let socketIOIntegration: any = null;
@@ -190,6 +192,16 @@ export const initAIAccessPoint = async (
       balanceRunMain.update();
     }
 
+    // Initialize auth table
+    try {
+      const pool = new Pool({ connectionString: env.POSTGRES_URL });
+      await initAuthTable(pool);
+      console.log("Auth table initialized successfully");
+    } catch (authTableError) {
+      console.warn("Failed to initialize auth table:", authTableError);
+      // Continue without auth table - it's optional
+    }
+
     // Initialize Socket.IO integration (enabled by default)
     try {
       const socketIOConfig: SocketIOConfig = {
@@ -260,6 +272,64 @@ export const initAIAccessPoint = async (
         handleRequest
       );
     }
+
+    // Add auth-link endpoint
+    app.post("/auth-link", parseAuth, protect, async (req: Request, res: Response) => {
+      try {
+        const { authLink } = req.body;
+        
+        if (!authLink || typeof authLink !== 'string') {
+          return res.status(400).json({ 
+            success: false, 
+            error: "authLink is required and must be a string" 
+          });
+        }
+
+        const result = await sendAuthLink(authLink);
+        
+        res.json({ 
+          success: true, 
+          data: { authLink: result } 
+        });
+      } catch (error: any) {
+        console.error("Error in auth-link handler:", error);
+        res.status(500).json({ 
+          success: false, 
+          error: error.message || "Internal server error" 
+        });
+      }
+    });
+
+    // Add auth-status endpoint
+    app.post("/auth-status", parseAuth, protect, async (req: Request, res: Response) => {
+      try {
+        const { serviceName } = req.body;
+        const userAddress = req.body.userAuthPayload?.userAddress;
+        
+        if (!serviceName || !userAddress) {
+          return res.status(400).json({ 
+            success: false, 
+            error: "serviceName and userAddress are required" 
+          });
+        }
+
+        // Get database pool
+        const pool = new Pool({ connectionString: env.POSTGRES_URL });
+        
+        const status = await checkAuthStatus(pool, userAddress, serviceName);
+        
+        res.json({ 
+          success: true, 
+          data: status 
+        });
+      } catch (error: any) {
+        console.error("Error in auth-status handler:", error);
+        res.status(500).json({ 
+          success: false, 
+          error: error.message || "Internal server error" 
+        });
+      }
+    });
 
     return { success: true, data: balanceRunMain };
   } catch (error: any) {
