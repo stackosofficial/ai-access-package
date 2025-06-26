@@ -7,10 +7,13 @@ import { protect } from "./middleware/auth";
 import { parseAuth } from "./middleware/parseAuth";
 import { validateApiKey } from "./middleware/validateApiKey";
 import { ApiKeyService } from "./apiKeyService";
+import { AuthService, createAuthService } from "./services/authService";
 import express, { Request, Response, NextFunction } from "express";
 import multer from "multer";
+import { Pool } from "pg";
 
 let skyNode: SkyMainNodeJS;
+let authService: AuthService | null = null;
 
 export const setupSkyNode = async (skyNodeParam: SkyMainNodeJS) => {
   skyNode = skyNodeParam;
@@ -122,6 +125,7 @@ interface ExtendedRequest extends Request {
 
 export interface AIAccessPointConfig {
   apiKeyConfig?: ApiKeyConfig;
+  authService?: AuthService;
 }
 
 export const initAIAccessPoint = async (
@@ -154,6 +158,19 @@ export const initAIAccessPoint = async (
     await balanceRunMain.setup();
     if (runUpdate) {
       balanceRunMain.update();
+    }
+
+    // Initialize auth service
+    if (config?.authService) {
+      authService = config.authService;
+      await authService.initTable();
+      console.log("Auth service initialized successfully");
+    } else {
+      // Create default auth service if none provided
+      const pool = new Pool({ connectionString: env.POSTGRES_URL });
+      authService = createAuthService(pool);
+      await authService.initTable();
+      console.log("Default auth service initialized successfully");
     }
 
     // Adapt the function if it's a legacy function (has 3 parameters)
@@ -197,6 +214,76 @@ export const initAIAccessPoint = async (
       );
     }
 
+    // Add auth-link endpoint
+    app.post("/auth-link", parseAuth, protect, async (req: Request, res: Response) => {
+      try {
+        const userAddress = req.body.userAuthPayload?.userAddress;
+        const nftId = req.body.accountNFT?.nftID;
+        
+        if (!userAddress || !nftId) {
+          return res.status(400).json({ 
+            success: false, 
+            error: "userAddress and nftId are required" 
+          });
+        }
+
+        if (!authService) {
+          return res.status(500).json({ 
+            success: false, 
+            error: "Auth service not configured" 
+          });
+        }
+
+        const authLink = await authService.generateAuthLink(userAddress, nftId);
+        
+        res.json({ 
+          success: true, 
+          data: { link: authLink } 
+        });
+      } catch (error: any) {
+        console.error("Error in auth-link handler:", error);
+        res.status(500).json({ 
+          success: false, 
+          error: error.message || "Internal server error" 
+        });
+      }
+    });
+
+    // Add auth-status endpoint
+    app.post("/auth-status", parseAuth, protect, async (req: Request, res: Response) => {
+      try {
+        const userAddress = req.body.userAuthPayload?.userAddress;
+        const nftId = req.body.accountNFT?.nftID;
+        
+        if (!userAddress || !nftId) {
+          return res.status(400).json({ 
+            success: false, 
+            error: "userAddress and nftId are required" 
+          });
+        }
+
+        if (!authService) {
+          return res.status(500).json({ 
+            success: false, 
+            error: "Auth service not configured" 
+          });
+        }
+
+        const isAuthenticated = await authService.checkAuthStatus(userAddress, nftId);
+        
+        res.json({ 
+          success: true, 
+          data: isAuthenticated 
+        });
+      } catch (error: any) {
+        console.error("Error in auth-status handler:", error);
+        res.status(500).json({ 
+          success: false, 
+          error: error.message || "Internal server error" 
+        });
+      }
+    });
+
     return { success: true, data: balanceRunMain };
   } catch (error: any) {
     console.error("Error in initAIAccessPoint:", error);
@@ -206,3 +293,6 @@ export const initAIAccessPoint = async (
     };
   }
 };
+
+// Export auth service for developer use
+export const getAuthService = () => authService;
