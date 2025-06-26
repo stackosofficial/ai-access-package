@@ -109,11 +109,23 @@ export type RunNaturalFunctionType = (
   responseHandler: ResponseHandler
 ) => Promise<void>;
 
+// Add SendAuthLinkFunction type
+export type SendAuthLinkFunctionType = (
+  req: Request,
+  res: Response,
+  balanceRunMain: BalanceRunMain,
+  userAddress: string,
+  provider?: string
+) => Promise<{
+  success: boolean;
+  authUrl?: string;
+  error?: string;
+}>;
+
 // Adapter function to convert legacy function to new function signature
 export function adaptLegacyFunction(legacyFn: LegacyRunNaturalFunctionType): RunNaturalFunctionType {
-  return async (req, res, balanceRunMain, responseHandler) => {
-    // Legacy functions handle the response directly through res
-    return legacyFn(req, res, balanceRunMain);
+  return async (req: Request, res: Response, balanceRunMain: BalanceRunMain, responseHandler: ResponseHandler) => {
+    await legacyFn(req, res, balanceRunMain);
   };
 }
 
@@ -132,6 +144,7 @@ export interface AIAccessPointConfig {
     origin: string | string[];
     methods: string[];
   };
+  sendAuthLinkFunction?: SendAuthLinkFunctionType;
 }
 
 export const initAIAccessPointWithApp = async (
@@ -276,20 +289,37 @@ export const initAIAccessPoint = async (
     // Add auth-link endpoint
     app.post("/auth-link", parseAuth, protect, async (req: Request, res: Response) => {
       try {
-        const { authLink } = req.body;
+        const { provider = 'google' } = req.body;
+        const userAddress = req.body.userAuthPayload?.userAddress;
         
-        if (!authLink || typeof authLink !== 'string') {
+        if (!userAddress) {
           return res.status(400).json({ 
             success: false, 
-            error: "authLink is required and must be a string" 
+            error: "userAddress is required" 
           });
         }
 
-        const result = await sendAuthLink(authLink);
+        // Check if sendAuthLinkFunction is provided
+        if (!config?.sendAuthLinkFunction) {
+          return res.status(500).json({ 
+            success: false, 
+            error: "sendAuthLinkFunction not configured" 
+          });
+        }
+
+        // Call the developer's sendAuthLinkFunction
+        const result = await config.sendAuthLinkFunction(req, res, balanceRunMain, userAddress, provider);
         
+        if (!result.success) {
+          return res.status(400).json({ 
+            success: false, 
+            error: result.error || "Failed to generate auth link" 
+          });
+        }
+
         res.json({ 
           success: true, 
-          data: { authLink: result } 
+          data: { authUrl: result.authUrl } 
         });
       } catch (error: any) {
         console.error("Error in auth-link handler:", error);
