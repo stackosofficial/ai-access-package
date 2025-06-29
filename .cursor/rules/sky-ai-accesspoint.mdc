@@ -92,7 +92,147 @@ app.get('/auth/callback', async (req: Request, res: Response) => {
 - All authentication logic for third-party apps must be implemented as a subclass of `AuthService` in `src/services/`.
 - No code or tests should reference or import socket.io or websocket libraries.
 
-## 8. Required Dependencies (Exact Versions)
+## 8. OAuth Callback Security Requirements
+- **Callback URLs must NOT have any authentication middleware** (no auth tokens, no user validation)
+- The callback endpoint should be publicly accessible to receive OAuth responses from third-party services
+- **Security is handled through state verification**: Compare received state/code with temporary auth state stored during auth link generation
+- **Callback flow**:
+  1. User initiates auth via `/auth-link` → generates temporary state and redirects to OAuth provider
+  2. OAuth provider redirects to `/auth/callback` with code and state
+  3. Callback endpoint verifies state matches stored temporary state
+  4. Exchange code for tokens and save auth data using `authService.saveAuth()`
+  5. Clean up temporary state and redirect user to success page
+
+### **Example Callback Implementation (No Auth Required)**
+```typescript
+// ❌ WRONG - Callback with authentication
+app.get('/auth/callback', authenticateUser, async (req, res) => { ... });
+
+// ✅ CORRECT - Callback without authentication
+app.get('/auth/callback', async (req: Request, res: Response) => {
+  const { code, state } = req.query;
+  
+  // Verify state matches stored temporary state
+  const storedState = await getTemporaryState(state as string);
+  if (!storedState) {
+    return res.status(400).send('Invalid or expired state');
+  }
+  
+  // Exchange code for tokens
+  const tokens = await exchangeCodeForTokens(code as string);
+  
+  // Save auth data
+  await authService.saveAuth(storedState.userAddress, storedState.nftId, tokens);
+  
+  // Clean up temporary state
+  await cleanupTemporaryState(state as string);
+  
+  // Redirect to success page
+  res.redirect('/auth-success');
+});
+```
+
+## 9. Required Testing Scripts
+- **Always provide test scripts** for every third-party service implementation
+- **Two-phase testing approach**:
+
+### **Phase 1: Auth Link Generation Test**
+Create a test script that generates and displays the auth link for users to authorize:
+
+```typescript
+// test-auth-link.ts
+import axios from 'axios';
+import { getSkyNode } from './src/clients/skynet';
+
+async function testAuthLink() {
+  const skyNode = await getSkyNode();
+  const signature = await skyNode.appManager.getUrsulaAuth();
+  
+  try {
+    const response = await axios.post('http://localhost:3000/auth-link', {
+      userAuthPayload: JSON.stringify(signature.data),
+      accountNFT: JSON.stringify({
+        "collectionID": "0",
+        "nftID": "53"
+      })
+    });
+
+    console.log('🔗 Auth Link Generated:');
+    console.log(response.data.authLink);
+    console.log('\n📋 Instructions:');
+    console.log('1. Copy the auth link above');
+    console.log('2. Open it in your browser');
+    console.log('3. Complete the authorization process');
+    console.log('4. Run the natural request tests after authorization');
+    
+  } catch (error) {
+    console.error('❌ Auth Link Generation Failed:', error.response?.data || error.message);
+  }
+}
+
+testAuthLink();
+```
+
+### **Phase 2: Natural Request Action Tests**
+After successful authorization, test all supported actions through `/natural-request`:
+
+```typescript
+// test-natural-requests.ts
+import axios from 'axios';
+import { getSkyNode } from './src/clients/skynet';
+
+async function testNaturalRequests() {
+  const skyNode = await getSkyNode();
+  const signature = await skyNode.appManager.getUrsulaAuth();
+  
+  const testCases = [
+    {
+      name: "Service Analysis",
+      prompt: "Analyze my account activity and provide insights"
+    },
+    {
+      name: "Content Generation",
+      prompt: "Generate a professional post about AI trends"
+    },
+    {
+      name: "Data Retrieval",
+      prompt: "Get my recent activity data and summarize it"
+    }
+    // Add service-specific test cases
+  ];
+
+  for (const testCase of testCases) {
+    console.log(`\n🧪 Testing: ${testCase.name}`);
+    
+    try {
+      const response = await axios.post('http://localhost:3000/natural-request', {
+        prompt: testCase.prompt,
+        userAuthPayload: signature.data,
+        accountNFT: {
+          "collectionID": "0",
+          "nftID": "53"
+        }
+      });
+
+      console.log(`✅ ${testCase.name} Success:`, response.data.data?.result);
+      
+    } catch (error) {
+      console.error(`❌ ${testCase.name} Failed:`, error.response?.data || error.message);
+    }
+  }
+}
+
+testNaturalRequests();
+```
+
+### **Testing Script Requirements**
+- **Use simple TypeScript with axios** (no testing frameworks)
+- **Include comprehensive test cases** covering all service actions
+- **Provide clear instructions** for manual authorization steps
+- **Test both success and error scenarios**
+- **Include example prompts** for each supported action
+
+## 10. Required Dependencies (Exact Versions)
 ```json
 {
   "dependencies": {
@@ -121,7 +261,7 @@ app.get('/auth/callback', async (req: Request, res: Response) => {
 }
 ```
 
-## 9. Required Skynet Client Setup (Fixed Code)
+## 11. Required Skynet Client Setup (Fixed Code)
 ```typescript
 import SkyMainNodeJS from '@decloudlabs/skynet/lib/services/SkyMainNodeJS';
 import SkyEnvConfigNodeJS from '@decloudlabs/skynet/lib/types/types';
@@ -164,7 +304,7 @@ export const getSkyNode = async (): Promise<SkyMainNodeJS> => {
 
 **Note:** Storage API environment variables (LIGHTHOUSE_API_KEY, IPFS_PROJECT_ID, etc.) are optional and can be any placeholder string if not needed.
 
-## 10. Main Access Point Initialization
+## 12. Main Access Point Initialization
 
 ### Option A: With File Upload Support
 ```typescript
