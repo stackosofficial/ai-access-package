@@ -34,8 +34,7 @@ export interface SupabaseConfig {
   jwtSecret?: string;
 }
 
-export interface ApiKeyConfig extends SupabaseConfig {
-  enabled: boolean;
+export interface ApiKeyConfig {
   collectionId?: string;
 }
 

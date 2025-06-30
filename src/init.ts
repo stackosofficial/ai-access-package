@@ -149,8 +149,9 @@ export const initAIAccessPointWithApp = async (
 
     // Initialize API key service if config is provided
     let apiKeyService: ApiKeyService | undefined;
-    if (config?.apiKeyConfig?.enabled) {
+    if (config?.apiKeyConfig) {
       apiKeyService = new ApiKeyService(config.apiKeyConfig);
+      console.log("setting up tables");
       await apiKeyService.setupTables();
       }
 
@@ -229,13 +230,14 @@ export const initAIAccessPoint = async (
     }
 
     // API Key Service setup
-    let apiKeyService: ApiKeyService | undefined;
-    if (apiKeyConfig && apiKeyConfig.enabled) {
+    let apiKeyService: ApiKeyService | undefined ;
+    console.log("apiKeyConfig", apiKeyConfig);
+    if (apiKeyConfig) {
       apiKeyService = new ApiKeyService(apiKeyConfig);
       await apiKeyService.setupTables();
       (global as any).apiKeyService = apiKeyService;
 
-      // Register API key endpoints only if apiKeyService is defined
+      // Register API key endpoints is defined
       if (apiKeyService) {
         app.post('/api/generate-key', async (req: Request, res: Response) => {
           try {
@@ -272,6 +274,12 @@ export const initAIAccessPoint = async (
           } catch (error: any) {
             console.error('Error validating API key:', error);
             return res.status(500).json({ error: error.message || 'Error validating API key' });
+          }
+        });
+        console.log('Registered /api/generate-key and /api/validate-key endpoints');
+        app._router.stack.forEach((r: any) => {
+          if (r.route && r.route.path) {
+            console.log(r.route.path, Object.keys(r.route.methods));
           }
         });
       }
