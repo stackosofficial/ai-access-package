@@ -4,11 +4,8 @@ export { ServiceManagement } from './serviceManagement';
 export { validateApiKey } from './middleware/validateApiKey';
 export { protect } from './middleware/auth';
 
-// Export Socket.IO functionality
-export { 
-  SocketIOManager,
-  createSocketIOIntegration
-} from './websocket/socketIOManager';
+// Export auth service
+export { AuthService, createAuthService } from './services/authService';
 
 // Export types
 export type { 
@@ -18,15 +15,8 @@ export type {
 
 export type { ServiceDetails } from './serviceManagement';
 
-// Export Socket.IO types
-export type {
-  SocketIOConfig,
-  SocketIOMessage,
-  TaskUpdate
-} from './websocket/socketIOManager';
-
 // Export initialization
-export { initAIAccessPoint, getSocketIOIntegration } from './init';
+export { initAIAccessPoint, getAuthService } from './init';
 export type { AIAccessPointConfig } from './init';
 
 export { 
