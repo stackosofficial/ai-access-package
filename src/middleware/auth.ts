@@ -1,13 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { ethers } from "ethers";
-
-declare global {
-  
-  var apiKeyService: {
-    validateApiKey: (apiKey: string) => Promise<boolean>;
-    getApiKeyDetails: (apiKey: string) => Promise<any>;
-  };
-}
+import "../types/types"; // Import types for global declarations
 
 const SIGNATURE_EXPIRES_IN_MILLISECONDS = 15 * 60 * 1000;
 

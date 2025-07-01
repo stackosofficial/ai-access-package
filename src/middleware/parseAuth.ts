@@ -1,4 +1,3 @@
-
 declare module "express-serve-static-core" {
   interface Request {
     authInfo?: {
@@ -8,13 +7,8 @@ declare module "express-serve-static-core" {
   }
 }
 
-declare global {
-  var apiKeyService: {
-    validateApiKey: (apiKey: string) => Promise<boolean>;
-    getApiKeyDetails: (apiKey: string) => Promise<any>;
-  };
-}
 import { Request, Response, NextFunction } from "express";
+import "../types/types"; // Import types for global declarations
 
 console.log("parseAuth middleware triggered");
 

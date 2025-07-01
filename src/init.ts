@@ -173,6 +173,48 @@ export const initAIAccessPoint = async (
       console.log("Default auth service initialized successfully");
     }
 
+    // Initialize API Key Service - try to set up by default
+    let apiKeyService: ApiKeyService;
+    
+    if (config?.apiKeyConfig) {
+      // Use provided config
+      console.log("Initializing API Key Service with provided config...");
+      apiKeyService = new ApiKeyService(config.apiKeyConfig, env.POSTGRES_URL);
+    } else {
+      // Use default config - enable if POSTGRES_URL is available
+      const defaultConfig: ApiKeyConfig = {
+        enabled: !!env.POSTGRES_URL,
+        jwtSecret: process.env.JWT_SECRET || 'default-jwt-secret',
+        collectionId: process.env.DEFAULT_COLLECTION_ID
+      };
+      
+      if (defaultConfig.enabled) {
+        console.log("Initializing API Key Service with default config using PostgreSQL...");
+      } else {
+        console.log("API Key Service disabled - missing POSTGRES_URL");
+      }
+      
+      apiKeyService = new ApiKeyService(defaultConfig, env.POSTGRES_URL);
+    }
+    
+    // Always set up tables if API key service is enabled
+    if (apiKeyService && (config?.apiKeyConfig?.enabled !== false)) {
+      try {
+        await apiKeyService.setupTables();
+        
+        // Set SkyNode for authentication
+        await apiKeyService.setSkyNode(skyNodeParam);
+        
+        console.log("API Key Service initialized successfully");
+      } catch (error: any) {
+        console.error("Failed to initialize API Key Service:", error);
+        // Continue without API key functionality
+      }
+    }
+    
+    // Always make API key service available globally for middleware
+    global.apiKeyService = apiKeyService;
+
     // Adapt the function if it's a legacy function (has 3 parameters)
     const adaptedFunction: RunNaturalFunctionType = 
       runNaturalFunction.length <= 3 
@@ -277,6 +319,157 @@ export const initAIAccessPoint = async (
         });
       } catch (error: any) {
         console.error("Error in auth-status handler:", error);
+        res.status(500).json({ 
+          success: false, 
+          error: error.message || "Internal server error" 
+        });
+      }
+    });
+
+    // Add API key generation endpoint using signature-based auth
+    app.post("/generate-api-key", parseAuth, protect, async (req: Request, res: Response) => {
+      try {
+        const userAddress = req.body.userAuthPayload?.userAddress;
+        const accountNFT = req.body.accountNFT;
+        
+        if (!userAddress) {
+          return res.status(400).json({ 
+            success: false, 
+            error: "userAddress is required" 
+          });
+        }
+
+        if (!accountNFT?.collectionID || !accountNFT?.nftID) {
+          return res.status(400).json({ 
+            success: false, 
+            error: "accountNFT with collectionID and nftID are required" 
+          });
+        }
+
+        if (!global.apiKeyService) {
+          return res.status(500).json({ 
+            success: false, 
+            error: "API key service not available" 
+          });
+        }
+
+        // Generate API key using signature-verified user data
+        const result = await global.apiKeyService.generateApiKeyFromAuth(
+          userAddress,
+          accountNFT.collectionID,
+          accountNFT.nftID
+        );
+        
+        if (result.error) {
+          return res.status(400).json({ 
+            success: false, 
+            error: result.error 
+          });
+        }
+
+        res.json({ 
+          success: true, 
+          data: { 
+            apiKey: result.apiKey,
+            walletAddress: userAddress,
+            collectionID: accountNFT.collectionID,
+            nftID: accountNFT.nftID
+          } 
+        });
+      } catch (error: any) {
+        console.error("Error in generate-api-key handler:", error);
+        res.status(500).json({ 
+          success: false, 
+          error: error.message || "Internal server error" 
+        });
+      }
+    });
+
+    // Add API key retrieval endpoint using signature-based auth
+    app.post("/get-api-keys", parseAuth, protect, async (req: Request, res: Response) => {
+      try {
+        const userAddress = req.body.userAuthPayload?.userAddress;
+        
+        if (!userAddress) {
+          return res.status(400).json({ 
+            success: false, 
+            error: "userAddress is required" 
+          });
+        }
+
+        if (!global.apiKeyService) {
+          return res.status(500).json({ 
+            success: false, 
+            error: "API key service not available" 
+          });
+        }
+
+        // Get all API keys for the authenticated user
+        const result = await global.apiKeyService.getUserApiKeys(userAddress);
+        
+        if (result.error) {
+          return res.status(400).json({ 
+            success: false, 
+            error: result.error 
+          });
+        }
+
+        res.json({ 
+          success: true, 
+          data: result.apiKeys || [] 
+        });
+      } catch (error: any) {
+        console.error("Error in get-api-keys handler:", error);
+        res.status(500).json({ 
+          success: false, 
+          error: error.message || "Internal server error" 
+        });
+      }
+    });
+
+    // Add API key revocation endpoint using signature-based auth  
+    app.post("/revoke-api-key", parseAuth, protect, async (req: Request, res: Response) => {
+      try {
+        const userAddress = req.body.userAuthPayload?.userAddress;
+        const { apiKey } = req.body;
+        
+        if (!userAddress) {
+          return res.status(400).json({ 
+            success: false, 
+            error: "userAddress is required" 
+          });
+        }
+
+        if (!apiKey) {
+          return res.status(400).json({ 
+            success: false, 
+            error: "apiKey is required" 
+          });
+        }
+
+        if (!global.apiKeyService) {
+          return res.status(500).json({ 
+            success: false, 
+            error: "API key service not available" 
+          });
+        }
+
+        // Revoke API key for the authenticated user
+        const result = await global.apiKeyService.revokeApiKey(userAddress, apiKey);
+        
+        if (result.error) {
+          return res.status(400).json({ 
+            success: false, 
+            error: result.error 
+          });
+        }
+
+        res.json({ 
+          success: true, 
+          message: "API key revoked successfully" 
+        });
+      } catch (error: any) {
+        console.error("Error in revoke-api-key handler:", error);
         res.status(500).json({ 
           success: false, 
           error: error.message || "Internal server error" 
