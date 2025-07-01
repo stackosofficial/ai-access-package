@@ -84,7 +84,79 @@ app.get('/auth/callback', async (req: Request, res: Response) => {
 - Streaming is supported only via HTTP Server-Sent Events (SSE) using the `stream=true` query parameter.
 - Use the `ResponseHandler` interface for all responses, including streaming.
 
-## 6. Testing
+## 6. Testing Requirements and Restrictions
+
+### **MANDATORY: Use Test Scripts Only**
+- **❌ NEVER use curl or Postman** for testing AI Access Point endpoints
+- **❌ NEVER use manual tools** for authentication testing
+- **✅ ALWAYS use TypeScript test scripts** with the Sky AI Access Point SDK
+
+### **Why Manual Testing Tools Are Forbidden**
+1. **Signature Generation**: The SDK automatically generates cryptographic signatures with proper timing
+2. **10-Minute Time Window**: Signatures expire after 10 minutes - SDK handles this automatically
+3. **Proper Authentication Flow**: SDK manages the complete auth lifecycle including token refresh
+4. **Consistent Testing**: Test scripts ensure reproducible results across different environments
+5. **Error Handling**: SDK provides proper error handling and retry mechanisms
+
+### **Required Test Script Structure**
+All test scripts must follow this pattern:
+
+```typescript
+// test-[feature-name].ts
+import axios from 'axios';
+import { getSkyNode } from './src/clients/skynet';
+
+async function test[FeatureName]() {
+  // Step 1: Get authenticated SkyNode instance
+  const skyNode = await getSkyNode();
+  const signature = await skyNode.appManager.getUrsulaAuth();
+  
+  try {
+    // Step 2: Make request with proper SDK-generated signatures
+    const response = await axios.post('http://localhost:3000/[endpoint]', {
+      // Use SDK-generated auth payload
+      userAuthPayload: JSON.stringify(signature.data), // For auth endpoints
+      // OR
+      userAuthPayload: signature.data, // For natural-request endpoint
+      accountNFT: {
+        "collectionID": "0",
+        "nftID": "53"
+      },
+      // Add endpoint-specific parameters
+      prompt: "Your test prompt here"
+    });
+
+    console.log('✅ Test Success:', response.data);
+    
+  } catch (error) {
+    console.error('❌ Test Failed:', error.response?.data || error.message);
+  }
+}
+
+test[FeatureName]();
+```
+
+### **Testing Best Practices**
+- **Use ts-node** to run test scripts: `npx ts-node test-script.ts`
+- **Include comprehensive test cases** for all supported actions
+- **Test both success and failure scenarios**
+- **Provide clear console output** with ✅/❌ indicators
+- **Include setup instructions** in test script comments
+- **Test auth flow first**, then natural requests
+
+### **Example Test Commands (Using Scripts Only)**
+```bash
+# ✅ CORRECT - Using test scripts
+npx ts-node test-auth-link.ts
+npx ts-node test-natural-requests.ts
+npx ts-node test-specific-feature.ts
+
+# ❌ WRONG - Using manual tools
+curl -X POST http://localhost:3000/auth-link  # DON'T DO THIS
+# Postman requests                            # DON'T DO THIS
+```
+
+### **Legacy Testing Information**
 - All test scripts must use HTTP REST (axios/fetch) only.
 - No socket or websocket tests are required or allowed.
 
