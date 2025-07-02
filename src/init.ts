@@ -249,6 +249,7 @@ export const initAIAccessPoint = async (
     } else {
       app.post(
         "/natural-request",
+        parseAuth,
         protect,
         (req: Request, res: Response, next: NextFunction) =>
           checkBalance(req, res, next, contractAddress),
