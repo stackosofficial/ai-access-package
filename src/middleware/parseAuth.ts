@@ -56,11 +56,11 @@ export const parseAuth = async (req: Request, res: Response, next: NextFunction)
       return next();
     }
 
-    // Existing behavior for userAuthPayload and accountNFT from body
-    const userAuthPayloadStr = req.body.userAuthPayload;
-    const accountNFTStr = req.body.accountNFT;
+    // ✅ CORRECTED: Handle both JSON strings and objects
+    const userAuthPayloadRaw = req.body.userAuthPayload;
+    const accountNFTRaw = req.body.accountNFT;
 
-    if (!userAuthPayloadStr || !accountNFTStr) {
+    if (!userAuthPayloadRaw || !accountNFTRaw) {
       return res.status(400).json({
         success: false,
         data: "Missing userAuthPayload or accountNFT",
@@ -68,16 +68,46 @@ export const parseAuth = async (req: Request, res: Response, next: NextFunction)
     }
 
     let userAuthPayload, accountNFT;
-    try {
-      userAuthPayload = JSON.parse(userAuthPayloadStr);
-      accountNFT = JSON.parse(accountNFTStr);
-    } catch {
+    
+    // Handle userAuthPayload - can be string or object
+    if (typeof userAuthPayloadRaw === 'string') {
+      try {
+        userAuthPayload = JSON.parse(userAuthPayloadRaw);
+      } catch {
+        return res.status(400).json({
+          success: false,
+          data: "Invalid JSON format in userAuthPayload",
+        });
+      }
+    } else if (typeof userAuthPayloadRaw === 'object') {
+      userAuthPayload = userAuthPayloadRaw;
+    } else {
       return res.status(400).json({
         success: false,
-        data: "Invalid JSON format",
+        data: "userAuthPayload must be a JSON object or string",
       });
     }
 
+    // Handle accountNFT - can be string or object
+    if (typeof accountNFTRaw === 'string') {
+      try {
+        accountNFT = JSON.parse(accountNFTRaw);
+      } catch {
+        return res.status(400).json({
+          success: false,
+          data: "Invalid JSON format in accountNFT",
+        });
+      }
+    } else if (typeof accountNFTRaw === 'object') {
+      accountNFT = accountNFTRaw;
+    } else {
+      return res.status(400).json({
+        success: false,
+        data: "accountNFT must be a JSON object or string",
+      });
+    }
+
+    // Validate userAuthPayload structure
     if (
       !userAuthPayload.message ||
       !userAuthPayload.signature ||
@@ -85,14 +115,15 @@ export const parseAuth = async (req: Request, res: Response, next: NextFunction)
     ) {
       return res.status(400).json({
         success: false,
-        data: "Missing fields in userAuthPayload",
+        data: "Missing fields in userAuthPayload (message, signature, userAddress required)",
       });
     }
 
+    // Validate accountNFT structure
     if (!accountNFT.collectionID || !accountNFT.nftID) {
       return res.status(400).json({
         success: false,
-        data: "Missing fields in accountNFT",
+        data: "Missing fields in accountNFT (collectionID, nftID required)",
       });
     }
 
