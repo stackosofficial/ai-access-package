@@ -14,10 +14,12 @@ export class ApiKeyService {
   private pool: Pool | null = null;
   private config: ApiKeyConfig;
   private postgresUrl: string;
+  private backendId: string;
 
   constructor(config: ApiKeyConfig, postgresUrl: string) {
     this.config = config;
     this.postgresUrl = postgresUrl;
+    this.backendId = process.env.BACKEND_ID || 'default';
   }
 
   async setupDatabase(): Promise<void> {
@@ -51,31 +53,34 @@ export class ApiKeyService {
   }
 
   private async createTables(client: any): Promise<void> {
-    // Create API keys table
+    // Create API keys table with backend_id
     await client.query(`
       CREATE TABLE IF NOT EXISTS api_keys (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        key TEXT NOT NULL UNIQUE,
+        key TEXT NOT NULL,
         wallet_address TEXT NOT NULL,
         nft_collection_id TEXT NOT NULL,
         nft_id TEXT NOT NULL,
+        backend_id TEXT NOT NULL DEFAULT 'default',
         is_active BOOLEAN NOT NULL DEFAULT true,
         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
         revoked_at TIMESTAMPTZ,
-        last_used_at TIMESTAMPTZ
+        last_used_at TIMESTAMPTZ,
+        UNIQUE(key, backend_id)
       );
       
-      CREATE INDEX IF NOT EXISTS idx_api_keys_key ON api_keys(key);
-      CREATE INDEX IF NOT EXISTS idx_api_keys_wallet ON api_keys(wallet_address);
-      CREATE INDEX IF NOT EXISTS idx_api_keys_active ON api_keys(is_active) WHERE is_active = true;
-      CREATE INDEX IF NOT EXISTS idx_api_keys_nft ON api_keys(wallet_address, nft_collection_id, nft_id);
+      CREATE INDEX IF NOT EXISTS idx_api_keys_key_backend ON api_keys(key, backend_id);
+      CREATE INDEX IF NOT EXISTS idx_api_keys_wallet_backend ON api_keys(wallet_address, backend_id);
+      CREATE INDEX IF NOT EXISTS idx_api_keys_active_backend ON api_keys(is_active, backend_id) WHERE is_active = true;
+      CREATE INDEX IF NOT EXISTS idx_api_keys_nft_backend ON api_keys(wallet_address, nft_collection_id, nft_id, backend_id);
     `);
 
-    // Create usage logs table
+    // Create usage logs table with backend_id
     await client.query(`
       CREATE TABLE IF NOT EXISTS api_usage_logs (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         api_key_id UUID REFERENCES api_keys(id) ON DELETE CASCADE,
+        backend_id TEXT NOT NULL DEFAULT 'default',
         endpoint TEXT NOT NULL,
         method TEXT NOT NULL,
         status_code INTEGER,
@@ -83,9 +88,9 @@ export class ApiKeyService {
         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
 
-      CREATE INDEX IF NOT EXISTS idx_api_usage_logs_api_key ON api_usage_logs(api_key_id);
-      CREATE INDEX IF NOT EXISTS idx_api_usage_logs_created_at ON api_usage_logs(created_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_api_usage_logs_service_id ON api_usage_logs(service_id);
+      CREATE INDEX IF NOT EXISTS idx_api_usage_logs_api_key_backend ON api_usage_logs(api_key_id, backend_id);
+      CREATE INDEX IF NOT EXISTS idx_api_usage_logs_created_at_backend ON api_usage_logs(created_at DESC, backend_id);
+      CREATE INDEX IF NOT EXISTS idx_api_usage_logs_service_id_backend ON api_usage_logs(service_id, backend_id);
     `);
 
     // Create function to update last_used_at
@@ -164,7 +169,7 @@ export class ApiKeyService {
       // Log the API key being checked
       console.log('Fetching details for API key:', apiKey);
 
-      const { rows } = await this.pool.query('SELECT * FROM api_keys WHERE key = $1 AND is_active = true LIMIT 1', [apiKey]);
+      const { rows } = await this.pool.query('SELECT * FROM api_keys WHERE key = $1 AND backend_id = $2 AND is_active = true LIMIT 1', [apiKey, this.backendId]);
 
       if (rows.length === 0) {
         console.error('No data found for API key');
