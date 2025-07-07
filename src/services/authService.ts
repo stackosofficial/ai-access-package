@@ -5,19 +5,22 @@ const CREATE_AUTH_TABLE_SQL = `
 CREATE TABLE IF NOT EXISTS auth_data (
   user_address TEXT NOT NULL,
   nft_id TEXT NOT NULL,
+  backend_id TEXT NOT NULL DEFAULT 'default',
   auth_data JSONB,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
-  PRIMARY KEY (user_address, nft_id)
+  PRIMARY KEY (user_address, nft_id, backend_id)
 );
 `;
 
 // Abstract Auth Class
 export abstract class AuthService {
   protected pool: Pool;
+  protected backendId: string;
 
   constructor(pool: Pool) {
     this.pool = pool;
+    this.backendId = process.env.BACKEND_ID || 'default';
   }
 
   // Abstract method - developer must implement
@@ -27,8 +30,8 @@ export abstract class AuthService {
   async checkAuthStatus(userAddress: string, nftId: string): Promise<boolean> {
     try {
       const result = await this.pool.query(
-        'SELECT auth_data FROM auth_data WHERE user_address = $1 AND nft_id = $2',
-        [userAddress, nftId]
+        'SELECT auth_data FROM auth_data WHERE user_address = $1 AND nft_id = $2 AND backend_id = $3',
+        [userAddress, nftId, this.backendId]
       );
       return result.rows.length > 0 && result.rows[0].auth_data !== null;
     } catch (error) {
@@ -41,8 +44,8 @@ export abstract class AuthService {
   async getAuth(userAddress: string, nftId: string): Promise<any | null> {
     try {
       const result = await this.pool.query(
-        'SELECT auth_data FROM auth_data WHERE user_address = $1 AND nft_id = $2',
-        [userAddress, nftId]
+        'SELECT auth_data FROM auth_data WHERE user_address = $1 AND nft_id = $2 AND backend_id = $3',
+        [userAddress, nftId, this.backendId]
       );
       return result.rows.length > 0 ? result.rows[0].auth_data : null;
     } catch (error) {
@@ -55,11 +58,11 @@ export abstract class AuthService {
   async saveAuth(userAddress: string, nftId: string, authData: any): Promise<void> {
     try {
       await this.pool.query(
-        `INSERT INTO auth_data (user_address, nft_id, auth_data, updated_at)
-         VALUES ($1, $2, $3, NOW())
-         ON CONFLICT (user_address, nft_id)
-         DO UPDATE SET auth_data = $3, updated_at = NOW()`,
-        [userAddress, nftId, JSON.stringify(authData)]
+        `INSERT INTO auth_data (user_address, nft_id, backend_id, auth_data, updated_at)
+         VALUES ($1, $2, $3, $4, NOW())
+         ON CONFLICT (user_address, nft_id, backend_id)
+         DO UPDATE SET auth_data = $4, updated_at = NOW()`,
+        [userAddress, nftId, this.backendId, JSON.stringify(authData)]
       );
     } catch (error) {
       console.error('Error saving auth data:', error);
