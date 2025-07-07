@@ -137,6 +137,7 @@ export default class BalanceRunMain {
         prompt,
         userAuthPayload: userAuthPayload.data,
         accountNFT,
+        response_format: 'json_object'
       },
       headers: {
         "Content-Type": "application/json",
