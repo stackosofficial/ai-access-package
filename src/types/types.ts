@@ -38,6 +38,7 @@ export interface ApiKeyConfig {
   enabled: boolean;
   jwtSecret?: string;
   collectionId?: string;
+  rpcUrl?: string; // RPC URL for blockchain verification
 }
 
 export interface ApiKeyResponse {
@@ -65,24 +66,4 @@ export interface ApiKeyData {
   created_at: string;        // Database returns string timestamps
   revoked_at?: string | null;
   last_used_at?: string | null;
-}
-
-export interface IApiKeyService {
-  validateApiKey: (apiKey: string) => Promise<boolean>;
-  getApiKeyDetails: (apiKey: string) => Promise<ApiKeyData>;
-}
-
-// Global API Key Service Interface
-declare global {
-  var apiKeyService: {
-    validateApiKey: (apiKey: string) => Promise<boolean>;
-    getApiKeyDetails: (apiKey: string) => Promise<ApiKeyData | null>;
-    generateApiKeyFromAuth: (walletAddress: string, collectionID: string, nftID: string) => Promise<ApiKeyResponse>;
-    getUserApiKeys: (walletAddress: string) => Promise<{ apiKeys?: ApiKeyData[], error?: string }>;
-    revokeApiKey: (walletAddress: string, apiKey: string) => Promise<ApiKeyResponse>;
-    generateApiKey: (walletAddress: string, collectionID: string, nftID: string, token?: string) => Promise<ApiKeyResponse>;
-    getApiKey: (walletAddress: string, collectionID: string, nftID: string) => Promise<ApiKeyResponse>;
-    setupTables: () => Promise<void>;
-    logApiUsage: (apiKeyId: string, endpoint?: string, serviceId?: string) => Promise<void>;
-  };
 }
