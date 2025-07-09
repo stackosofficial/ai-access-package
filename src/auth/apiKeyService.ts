@@ -186,26 +186,18 @@ export const masterValidation = async (req: any, skyNode: SkyMainNodeJS): Promis
     const apiKey = req.headers['x-api-key'] || req.headers['authorization']?.replace('Bearer ', '');
 
     if (apiKey) {
-      console.log('API key provided - validating API key');
-
-      // Validate API key
       const pool = getGlobalPool();
-      
       const { rows } = await pool.query('SELECT id, wallet_address, nft_collection_id, nft_id FROM api_keys WHERE key = $1', [apiKey]);
-
       if (rows.length === 0) {
         return {
           isValid: false,
           error: 'API key validation failed - invalid or expired API key'
         };
       }
-
       const apiKeyWalletAddress = rows[0].wallet_address;
       const collectionId = rows[0].nft_collection_id;
       const nftId = rows[0].nft_id;
-
-      console.log(`Verifying accountNFT ownership for wallet: ${apiKeyWalletAddress}, collection: ${collectionId}, nft: ${nftId}`);
-
+      
       const isOwner = await validateAccountNFT(
         collectionId,
         nftId,

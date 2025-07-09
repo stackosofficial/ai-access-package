@@ -282,9 +282,7 @@ export const initAIAccessPoint = async (
       protect,
       async (req: Request, res: Response, next: NextFunction) => {
         try {
-          console.log("generate-api-key handler: Calling generateApiKey...");
           const result = await generateApiKey(req);
-          console.log("generate-api-key handler: Result:", result);
           if (result.error) {
             return res.status(400).json({
               success: false,
