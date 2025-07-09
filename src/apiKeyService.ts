@@ -7,7 +7,6 @@ import { getSkyNode } from './init';
 import SkyMainNodeJS from '@decloudlabs/skynet/lib/services/SkyMainNodeJS';
 import SkyUrsulaService from '@decloudlabs/skynet/lib/services/SkyUrsulaService';
 
-// Store authenticated wallet addresses
 const authenticatedWallets: Record<string, AuthTokenInfo> = {};
 
 export class ApiKeyService {
@@ -130,9 +129,6 @@ export class ApiKeyService {
     }
   }
 
-  /**
-   * Check if the required API key tables exist
-   */
   private async checkTablesExist(): Promise<boolean> {
     try {
       if (!this.pool) {
@@ -263,11 +259,6 @@ export class ApiKeyService {
     }
   }
 
-  /**
-   * Verify if a wallet address has been authenticated
-   * @param walletAddress The wallet address to check
-   * @param token Optional JWT token to validate
-   */
   private isAuthenticated(walletAddress: string, token?: string): boolean {
     const lowerWallet = walletAddress.toLowerCase();
     
@@ -292,11 +283,6 @@ export class ApiKeyService {
     return true;
   }
 
-  /**
-   * Generate API key for a wallet address, but only if it has been authenticated
-   * @param walletAddress The wallet address to generate an API key for
-   * @param token Optional JWT token for verification
-   */  // Update generateApiKey to include NFT data
   async generateApiKey(walletAddress: string, collectionID: string, nftID: string, token?: string): Promise<ApiKeyResponse> {
     if (!this.config.enabled) {
       return { error: 'API key functionality is not enabled' };
@@ -335,10 +321,6 @@ export class ApiKeyService {
     }
   }
 
-  /**
-   * Generate API key from signature-based authentication (no JWT token required)
-   * Used by the /generate-api-key endpoint
-   */
   async generateApiKeyFromAuth(walletAddress: string, collectionID: string, nftID: string): Promise<ApiKeyResponse> {
     if (!this.config.enabled) {
       return { error: 'API key functionality is not enabled' };
@@ -372,10 +354,6 @@ export class ApiKeyService {
     }
   }
 
-  /**
-   * Get all API keys for a user
-   * Used by the /get-api-keys endpoint
-   */
   async getUserApiKeys(walletAddress: string): Promise<{ apiKeys?: ApiKeyData[], error?: string }> {
     if (!this.config.enabled) {
       return { error: 'API key functionality is not enabled' };
@@ -442,10 +420,6 @@ export class ApiKeyService {
     }
   }
 
-  /**
-   * Validate API key for service access and log the usage
-   * This is a convenience method that combines validation and logging
-   */
   async validateApiKeyForService(apiKey: string, serviceId: string, serviceUrl: string): Promise<boolean> {
     if (!this.config.enabled) return true;
 
@@ -485,12 +459,6 @@ export class ApiKeyService {
     }
   }
 
-  /**
-   * Log API usage in the api_usage_logs table
-   * @param apiKeyId The API key ID
-   * @param endpoint The endpoint or service URL being accessed
-   * @param serviceId Optional service ID for tracking specific services
-   */
   async logApiUsage(apiKeyId: string, endpoint: string = '/natural-request', serviceId?: string): Promise<void> {
     try {
       if (!this.pool) throw new Error("Database not initialized");
@@ -526,10 +494,6 @@ export class ApiKeyService {
     return `sk_${walletAddress.substring(2, 8)}_${timestamp}_${random}`;
   }
 
-  /**
-   * Register a service for API usage tracking
-   * This just logs service information but doesn't create a database entry
-   */
   async registerService(serviceDetails: ServiceDetails): Promise<ServiceDetails> {
     if (!this.config.enabled) {
       throw new Error('API key functionality is not enabled');
@@ -538,9 +502,6 @@ export class ApiKeyService {
     return serviceDetails;
   }
 
-  /**
-   * Log service access - uses logApiUsage internally
-   */
   async logServiceAccess(apiKeyId: string, serviceId: string, serviceUrl: string): Promise<void> {
     if (!this.config.enabled) return;
     
@@ -548,9 +509,6 @@ export class ApiKeyService {
     await this.logApiUsage(apiKeyId, serviceUrl, serviceId);
   }
 
-  /**
-   * Set the SkyNode instance for authentication
-   */
   async setSkyNode(skyNode: SkyMainNodeJS): Promise<void> {
     if (!skyNode) {
       throw new Error('Invalid SkyNode instance provided');

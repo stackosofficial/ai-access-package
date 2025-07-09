@@ -115,14 +115,6 @@ export function adaptLegacyFunction(legacyFn: LegacyRunNaturalFunctionType): Run
   };
 }
 
-// Add custom type for extended Request
-interface ExtendedRequest extends Request {
-  user?: {
-    id: string;
-    wallet?: string;
-  };
-}
-
 export interface AIAccessPointConfig {
   apiKeyConfig?: ApiKeyConfig;
   authService?: AuthService;
