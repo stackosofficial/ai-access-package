@@ -1,12 +1,11 @@
 import SkyMainNodeJS from "@decloudlabs/skynet/lib/services/SkyMainNodeJS";
 import { AccountNFT, APICallReturn } from "@decloudlabs/skynet/lib/types/types";
-import { ethers } from "ethers";
-import { NFTCosts } from "./types/types";
-import ENVConfig from "./envConfig";
+import { NFTCosts } from "../../types/types";
+import ENVConfig from "../../core/envConfig";
 import ServerBalanceDatabaseService from "./serverBalanceDatabaseService";
-import { getServerCostCalculator } from "./utils";
-import { getSkyNode } from "./init";
-import { DatabaseWriterExecution } from "./databaseWriterExecution";
+import { getServerCostCalculator } from "../../utils/utils";
+import { getSkyNode } from "../../core/init";
+import { DatabaseWriterExecution } from "../../database/databaseWriterExecution";
 
 const NFT_UPDATE_INTERVAL = 1 * 60 * 1000; // 1 minute
 const BATCH_SIZE = 10; // Process 10 NFTs at a time

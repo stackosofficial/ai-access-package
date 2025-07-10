@@ -1,6 +1,6 @@
-import Mutex from "./mutex";
-import { NonReentrantExecution } from "./nonReentrantExecution";
-import { TimeIntervalExecution } from "./timeIntervalExecution";
+import Mutex from "../utils/mutex";
+import { NonReentrantExecution } from "../utils/nonReentrantExecution";
+import { TimeIntervalExecution } from "../utils/timeIntervalExecution";
 
 export class DatabaseWriterExecution<I> {
   nonReentrantExecution: NonReentrantExecution;

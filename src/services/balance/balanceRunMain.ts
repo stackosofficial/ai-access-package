@@ -1,9 +1,9 @@
-import { AIModelResponse, ENVDefinition } from "./types/types";
+import { AIModelResponse, ENVDefinition } from "../../types/types";
 import { AccountNFT, APICallReturn, UrsulaAuth } from "@decloudlabs/skynet/lib/types/types";
 import { sleep } from "@decloudlabs/skynet/lib/utils/utils";
 import BalanceExtractService from "./balanceExtractService";
 import ServerBalanceDatabaseService from "./serverBalanceDatabaseService";
-import ENVConfig from "./envConfig";
+import ENVConfig from "../../core/envConfig";
 import { ethers } from "ethers";
 import axios from "axios";
 import SkyMainNodeJS from "@decloudlabs/skynet/lib/services/SkyMainNodeJS";
@@ -137,6 +137,7 @@ export default class BalanceRunMain {
         prompt,
         userAuthPayload: userAuthPayload.data,
         accountNFT,
+        response_format: 'json_object'
       },
       headers: {
         "Content-Type": "application/json",

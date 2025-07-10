@@ -10,95 +10,76 @@ declare module "express-serve-static-core" {
 import { Request, Response, NextFunction } from "express";
 import "../types/types"; // Import types for global declarations
 
-console.log("parseAuth middleware triggered");
-
 export const parseAuth = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    console.log("parseAuth called");
+    // Set auth info if API key is present
     const apiKey = req.headers["x-api-key"];
 
-    if (apiKey && typeof apiKey === "string") {
-      req.authInfo = { apiKey, type: "apiKey" };
+    // Handle both JSON strings and objects for userAuthPayload and accountNFT
+    const userAuthPayloadRaw = req.body.userAuthPayload;
+    const accountNFTRaw = req.body.accountNFT;
 
-      if (global.apiKeyService) {
-        try {
-          const valid = await global.apiKeyService.validateApiKey(apiKey);
-          if (!valid) {
-            return res.status(401).json({
-              success: false,
-              data: "Invalid API key",
-            });
-          }
-          
-          // Get API key details
-          const keyDetails = await global.apiKeyService.getApiKeyDetails(apiKey);
-          if (!keyDetails) {
-            return res.status(401).json({
-              success: false,
-              data: "Could not retrieve API key details",
-            });
-          }
-
-          req.body.userAuthPayload = {
-            userAddress: keyDetails.wallet_address,
-            signature: "API_KEY_AUTH",
-            message:Date.now().toString(),
-          };
-
-          req.body.accountNFT = {
-            collectionID: keyDetails.nft_collection_id,
-            nftID: keyDetails.nft_id,
-          };
-        } catch (error) {
-          return res.status(401).json({ success: false, data: "Invalid API key" });
-        }
-      }
-
+    // If no auth data provided and no API key, let masterValidation handle the error
+    if (!userAuthPayloadRaw && !accountNFTRaw && !apiKey) {
+      console.log("parseAuth called 2");
       return next();
     }
 
-    // Existing behavior for userAuthPayload and accountNFT from body
-    const userAuthPayloadStr = req.body.userAuthPayload;
-    const accountNFTStr = req.body.accountNFT;
+    // Parse userAuthPayload if provided
+    if (userAuthPayloadRaw) {
+      let userAuthPayload;
+      
+      if (typeof userAuthPayloadRaw === 'string') {
+        try {
+          userAuthPayload = JSON.parse(userAuthPayloadRaw);
+        } catch {
+          return res.status(400).json({
+            success: false,
+            data: "Invalid JSON format in userAuthPayload",
+          });
+        }
+      } else if (typeof userAuthPayloadRaw === 'object') {
+        userAuthPayload = userAuthPayloadRaw;
+      } else {
+        return res.status(400).json({
+          success: false,
+          data: "userAuthPayload must be a JSON object or string",
+        });
+      }
 
-    if (!userAuthPayloadStr || !accountNFTStr) {
-      return res.status(400).json({
-        success: false,
-        data: "Missing userAuthPayload or accountNFT",
-      });
+      req.body.userAuthPayload = userAuthPayload;
     }
 
-    let userAuthPayload, accountNFT;
-    try {
-      userAuthPayload = JSON.parse(userAuthPayloadStr);
-      accountNFT = JSON.parse(accountNFTStr);
-    } catch {
-      return res.status(400).json({
-        success: false,
-        data: "Invalid JSON format",
-      });
+    // Parse accountNFT if provided
+    if (accountNFTRaw) {
+      let accountNFT;
+      
+      if (typeof accountNFTRaw === 'string') {
+        try {
+          accountNFT = JSON.parse(accountNFTRaw);
+        } catch {
+          return res.status(400).json({
+            success: false,
+            data: "Invalid JSON format in accountNFT",
+          });
+        }
+      } else if (typeof accountNFTRaw === 'object') {
+        accountNFT = accountNFTRaw;
+      } else {
+        return res.status(400).json({
+          success: false,
+          data: "accountNFT must be a JSON object or string",
+        });
+      }
+
+      req.body.accountNFT = accountNFT;
     }
 
-    if (
-      !userAuthPayload.message ||
-      !userAuthPayload.signature ||
-      !userAuthPayload.userAddress
-    ) {
-      return res.status(400).json({
-        success: false,
-        data: "Missing fields in userAuthPayload",
-      });
-    }
-
-    if (!accountNFT.collectionID || !accountNFT.nftID) {
-      return res.status(400).json({
-        success: false,
-        data: "Missing fields in accountNFT",
-      });
-    }
-
-    req.body.userAuthPayload = userAuthPayload;
-    req.body.accountNFT = accountNFT;
-
+    console.log("parseAuth called 3");
+    console.log("parseAuth: About to call next() - moving to protect middleware");
+    console.log("parseAuth: Request URL:", req.url);
+    console.log("parseAuth: Request method:", req.method);
     next();
   } catch (error: any) {
     return res.status(400).json({

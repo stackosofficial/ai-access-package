@@ -1,5 +1,5 @@
 import { ServerCostCalculator__factory } from "@decloudlabs/skynet/lib/types/contracts";
-import ENVConfig from "./envConfig";
+import ENVConfig from "../core/envConfig";
 import { ethers } from "ethers";
 
 export const getServerCostCalculator = (

@@ -1,7 +1,7 @@
 import { AccountNFT, APICallReturn } from "@decloudlabs/skynet/lib/types/types";
 import { apiCallWrapper } from "@decloudlabs/skynet/lib/utils/utils";
-import ENVConfig from "./envConfig";
-import { NFTCosts } from "./types/types";
+import ENVConfig from "../../core/envConfig";
+import { NFTCosts } from "../../types/types";
 import { Pool, PoolClient, QueryResult } from 'pg';
 
 export default class ServerBalanceDatabaseService {

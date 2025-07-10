@@ -1,85 +1,39 @@
 import { Request, Response, NextFunction } from "express";
-import { ethers } from "ethers";
-import "../types/types"; // Import types for global declarations
+import { masterValidation } from '../auth/apiKeyService';
+import { Pool } from "pg";
+import SkyMainNodeJS from "@decloudlabs/skynet/lib/services/SkyMainNodeJS";
 
-const SIGNATURE_EXPIRES_IN_MILLISECONDS = 15 * 60 * 1000;
-
-console.log("protect middleware loaded");
-
-export const protect = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  console.log("Headers:", req.headers);
-  console.log(" Body:", req.body);
-
+export const protect = async (req: Request, res: Response, next: NextFunction, skyNode: SkyMainNodeJS, pool: Pool) => {
   try {
-    const apiKey = req.headers["x-api-key"] as string;
-
-    //  API Key Authentication
-    if (apiKey) {
-      try {
-        console.log(" API key provided:", apiKey);
-        console.log(" API key validated - skipping signature auth");
-        return next();
-      } catch (err) {
-        console.error(" Error during API key validation:", err);
-        return res.status(500).json({
-          success: false,
-          message: "Internal server error during API key validation",
-        });
-      }
-    }
-
-    //  Signature-based Authentication
-    const userAuthPayload = req.body.userAuthPayload;
-
-    if (!userAuthPayload) {
+    
+    if (!skyNode) {
       return res.status(401).json({
         success: false,
-        data: new Error("Not authorized to access this route"),
+        message: "Failed to initialize SkyNode",
       });
     }
 
-    const { message, signature, userAddress } = userAuthPayload;
-    const timestamp = Number(message);
-
-    if (
-      signature !== "API_KEY_AUTH" &&
-      isSignatureExpired(Number(timestamp))
-    ) {
-      return res.json({
-        success: false,
-        data: new Error("Signature expired").toString(),
-      });
-  }
-
-    const extractedAddress = ethers.verifyMessage(
-      new Uint8Array(Buffer.from(message)),
-      signature
-    );
-
-    if (userAddress.toLowerCase() !== extractedAddress.toLowerCase()) {
+    const validationResult = await masterValidation(req, skyNode, pool);
+    
+    if (!validationResult.isValid) {
       return res.status(401).json({
         success: false,
-        data: new Error("Signature is invalid").toString(),
+        message: validationResult.error || "Authentication failed",
       });
     }
 
-    console.log(" Signature-based auth passed");
-    return next();
-  } catch (err: any) {
-     const error: Error = err;
-    console.error(" Error in protect middleware:", err);
+    const newBody = {
+      prompt: req.body.prompt,
+      agentCollection: validationResult.agentCollection,
+      accountNFT: validationResult.accountNFT,
+      walletAddress: validationResult.walletAddress,
+    }
+    req.body = {...req.body, ...newBody};
+    return true;
+  } catch (err) {
     return res.status(500).json({
       success: false,
-      data: error.toString(),
+      message: "Internal server error during authentication",
     });
   }
-};
-
-export const isSignatureExpired = (timestamp: number) => {
-  const signatureExpiresAt = timestamp + SIGNATURE_EXPIRES_IN_MILLISECONDS;
-  return signatureExpiresAt <= Date.now();
 };
