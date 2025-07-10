@@ -159,8 +159,7 @@ export const initAIAccessPoint = async (
       console.log("Auth service initialized successfully");
     } else {
       // Create default auth service if none provided
-      const pool = new Pool({ connectionString: env.POSTGRES_URL });
-      authService = createAuthService(pool);
+      authService = createAuthService(env.POSTGRES_URL);
       await authService.initTable();
       console.log("Default auth service initialized successfully");
     }

@@ -18,8 +18,8 @@ export abstract class AuthService {
   protected pool: Pool;
   protected backendId: string;
 
-  constructor(pool: Pool) {
-    this.pool = pool;
+  constructor(postgresUrl: string) {
+    this.pool = new Pool({ connectionString: postgresUrl });
     this.backendId = process.env.BACKEND_ID || 'default';
   }
 
@@ -83,11 +83,11 @@ export abstract class AuthService {
 }
 
 // Factory function to create auth service
-export function createAuthService(pool: Pool): AuthService {
+export function createAuthService(postgresUrl: string): AuthService {
   return new (class extends AuthService {
     async generateAuthLink(userAddress: string, nftId: string): Promise<string> {
       // Default implementation - developer should override
       throw new Error('generateAuthLink must be implemented by developer');
     }
-  })(pool);
+  })(postgresUrl);
 } 

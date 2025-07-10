@@ -51,6 +51,8 @@ export async function validateAccountNFT(
         const ownerAddress = await skyNode.contractService.CollectionNFT.ownerOf(
             accountNFT
         );
+        console.log("ownerAddress", ownerAddress);
+        console.log("userAddress", userAddress);
         return ownerAddress.toLowerCase() === userAddress.toLowerCase();
     } catch (error) {
         console.error('Error validating account NFT:', error);
