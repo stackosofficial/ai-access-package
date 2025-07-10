@@ -1,9 +1,10 @@
 import { Request, Response, NextFunction } from "express";
 import { masterValidation } from '../auth/apiKeyService';
+import { Pool } from "pg";
+import SkyMainNodeJS from "@decloudlabs/skynet/lib/services/SkyMainNodeJS";
 
-export const protect = async (req: Request, res: Response, next: NextFunction) => {
+export const protect = async (req: Request, res: Response, next: NextFunction, skyNode: SkyMainNodeJS, pool: Pool) => {
   try {
-    const skyNode = (global as any).skyNode;
     
     if (!skyNode) {
       return res.status(401).json({
@@ -12,7 +13,7 @@ export const protect = async (req: Request, res: Response, next: NextFunction) =
       });
     }
 
-    const validationResult = await masterValidation(req, skyNode);
+    const validationResult = await masterValidation(req, skyNode, pool);
     
     if (!validationResult.isValid) {
       return res.status(401).json({
@@ -28,7 +29,7 @@ export const protect = async (req: Request, res: Response, next: NextFunction) =
       walletAddress: validationResult.walletAddress,
     }
     req.body = {...req.body, ...newBody};
-    next();
+    return true;
   } catch (err) {
     return res.status(500).json({
       success: false,

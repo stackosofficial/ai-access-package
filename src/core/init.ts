@@ -166,11 +166,16 @@ export const initAIAccessPoint = async (
     }
 
     // Initialize API key tables
-    await initializeApiKeyTables();
+    await initializeApiKeyTables(pool);
     console.log("API key tables initialized successfully");
 
     // Handler function that wraps runNaturalFunction with ResponseHandler
     const handleRequest = async (req: Request, res: Response, next: NextFunction) => {
+      const authVerified = await protect(req, res, next, skyNodeParam, pool);
+      if (!authVerified) {
+        res.sendStatus(401);  
+        return;
+      }
       try {
         console.log("handleRequest: Starting request processing");
         const responseHandler = new ResponseHandlerImpl(req, res);
@@ -190,7 +195,6 @@ export const initAIAccessPoint = async (
         "/natural-request",
         upload.array("files"),
         parseAuth,
-        protect,
         (req: Request, res: Response, next: NextFunction) =>
           checkBalance(req, res, next, contractAddress),
         handleRequest
@@ -199,7 +203,6 @@ export const initAIAccessPoint = async (
       app.post(
         "/natural-request",
         parseAuth,
-        protect,
         (req: Request, res: Response, next: NextFunction) =>
           checkBalance(req, res, next, contractAddress),
         handleRequest
@@ -207,7 +210,12 @@ export const initAIAccessPoint = async (
     }
 
     // Add auth-link endpoint
-    app.post("/auth-link", parseAuth, protect, async (req: Request, res: Response) => {
+    app.post("/auth-link", parseAuth, async (req: Request, res: Response, next: NextFunction) => {
+      const authVerified = await protect(req, res, next, skyNodeParam, pool);
+      if (!authVerified) {
+        res.sendStatus(401);  
+        return;
+      }
       try {
         const userAddress = req.body.walletAddress;
         const nftId = req.body.accountNFT.nftID;
@@ -242,7 +250,12 @@ export const initAIAccessPoint = async (
     });
 
     // Add auth-status endpoint
-    app.post("/auth-status", parseAuth, protect, async (req: Request, res: Response) => {
+    app.post("/auth-status", parseAuth, async (req: Request, res: Response, next: NextFunction) => {
+      const authVerified = await protect(req, res, next, skyNodeParam, pool);
+      if (!authVerified) {
+        res.sendStatus(401);  
+        return;
+      }
       try {
         const userAddress = req.body.userAuthPayload?.userAddress;
         const nftId = req.body.accountNFT?.nftID;
@@ -279,10 +292,14 @@ export const initAIAccessPoint = async (
     // Add API key generation endpoint using masterValidation
     app.post("/generate-api-key",
       parseAuth,
-      protect,
       async (req: Request, res: Response, next: NextFunction) => {
+        const authVerified = await protect(req, res, next, skyNodeParam, pool);
+        if (!authVerified) {
+          res.sendStatus(401);  
+          return;
+        }
         try {
-          const result = await generateApiKey(req);
+          const result = await generateApiKey(req, pool);
           if (result.error) {
             return res.status(400).json({
               success: false,
@@ -305,7 +322,12 @@ export const initAIAccessPoint = async (
       });
 
     // Add API key revocation endpoint using masterValidation
-    app.post("/revoke-api-key", parseAuth, protect, async (req: Request, res: Response) => {
+    app.post("/revoke-api-key", parseAuth, async (req: Request, res: Response, next: NextFunction) => {
+      const authVerified = await protect(req, res, next, skyNodeParam, pool);
+      if (!authVerified) {
+        res.sendStatus(401);  
+        return;
+      }
       try {
         const walletAddress = req.body.walletAddress;
         const { apiKey } = req.body;
@@ -324,7 +346,7 @@ export const initAIAccessPoint = async (
           });
         }
 
-        const result = await revokeApiKey(walletAddress, apiKey);
+        const result = await revokeApiKey(walletAddress, apiKey, pool);
 
         if (result.error) {
           return res.status(400).json({

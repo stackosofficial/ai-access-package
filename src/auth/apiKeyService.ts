@@ -7,15 +7,6 @@ import {
   validateAgentCollection,
 } from './ownershipVerification';
 
-// Helper function to get global pool
-const getGlobalPool = (): Pool => {
-  const pool = (global as any).globalPool;
-  if (!pool) {
-    throw new Error("Database not initialized");
-  }
-  return pool;
-};
-
 // Create database tables
 const createTables = async (client: any): Promise<void> => {
   console.log('Creating API keys table...');
@@ -77,10 +68,9 @@ const createTables = async (client: any): Promise<void> => {
 };
 
 // Initialize API key tables
-export const initializeApiKeyTables = async (): Promise<void> => {
+export const initializeApiKeyTables = async (pool: Pool): Promise<void> => {
   try {
     console.log('Initializing API key tables...');
-    const pool = getGlobalPool();
     const client = await pool.connect();
     try {
       await createTables(client);
@@ -133,10 +123,8 @@ export const validateSignature = async (address: string, signature: string, mess
 };
 
 // Revoke API key
-export const revokeApiKey = async (walletAddress: string, apiKey: string): Promise<ApiKeyResponse> => {
+export const revokeApiKey = async (walletAddress: string, apiKey: string, pool: Pool): Promise<ApiKeyResponse> => {
   try {
-    const pool = getGlobalPool();
-
     // Delete the API key from database
     const { rows } = await pool.query('DELETE FROM api_keys WHERE key = $1 AND wallet_address = $2 RETURNING *', [apiKey, walletAddress.toLowerCase()]);
 
@@ -148,9 +136,8 @@ export const revokeApiKey = async (walletAddress: string, apiKey: string): Promi
 };
 
 // Log API usage
-export const logApiUsage = async (apiKeyId: string, endpoint: string = '/natural-request', serviceId?: string): Promise<void> => {
+export const logApiUsage = async (apiKeyId: string, endpoint: string = '/natural-request', pool: Pool, serviceId?: string): Promise<void> => {
   try {
-    const pool = getGlobalPool();
     // Attempt to insert the log entry
     await pool.query('INSERT INTO api_usage_logs (api_key_id, endpoint, method, status_code, service_id) VALUES ($1, $2, $3, $4, $5)', [apiKeyId, endpoint, 'POST', 200, serviceId]);
   } catch (error: any) {
@@ -158,9 +145,8 @@ export const logApiUsage = async (apiKeyId: string, endpoint: string = '/natural
     if (error.code === '42P01') { // Table doesn't exist error
       console.error('api_usage_logs table does not exist. Attempting to create it...');
       try {
-        await initializeApiKeyTables();
+        await initializeApiKeyTables(pool);
         // Retry log insertion after table creation
-        const pool = getGlobalPool();
         if (pool) {
           await pool.query('INSERT INTO api_usage_logs (api_key_id, endpoint, method, status_code, service_id) VALUES ($1, $2, $3, $4, $5)', [apiKeyId, endpoint, 'POST', 200, serviceId]);
         }
@@ -177,7 +163,7 @@ export const logApiUsage = async (apiKeyId: string, endpoint: string = '/natural
 };
 
 // Master validation function
-export const masterValidation = async (req: any, skyNode: SkyMainNodeJS): Promise<{ isValid: boolean; error?: string; walletAddress?: string; accountNFT?: { collectionID: string; nftID: string }; agentCollection?: { agentCollection: string; agentID?: string } }> => {
+export const masterValidation = async (req: any, skyNode: SkyMainNodeJS, pool: Pool): Promise<{ isValid: boolean; error?: string; walletAddress?: string; accountNFT?: { collectionID: string; nftID: string }; agentCollection?: { agentCollection: string; agentID?: string } }> => {
   try {
     let walletAddress: string | undefined;
     let accountNFT: { collectionID: string; nftID: string } | undefined;
@@ -186,7 +172,6 @@ export const masterValidation = async (req: any, skyNode: SkyMainNodeJS): Promis
     const apiKey = req.headers['x-api-key'] || req.headers['authorization']?.replace('Bearer ', '');
 
     if (apiKey) {
-      const pool = getGlobalPool();
       const { rows } = await pool.query('SELECT id, wallet_address, nft_collection_id, nft_id FROM api_keys WHERE key = $1', [apiKey]);
       if (rows.length === 0) {
         return {
@@ -197,7 +182,7 @@ export const masterValidation = async (req: any, skyNode: SkyMainNodeJS): Promis
       const apiKeyWalletAddress = rows[0].wallet_address;
       const collectionId = rows[0].nft_collection_id;
       const nftId = rows[0].nft_id;
-      
+
       const isOwner = await validateAccountNFT(
         collectionId,
         nftId,
@@ -395,13 +380,11 @@ const createUniqueApiKey = (walletAddress: string): string => {
 };
 
 // Generate API key
-export const generateApiKey = async (req: any): Promise<ApiKeyResponse> => {
+export const generateApiKey = async (req: any, pool: Pool): Promise<ApiKeyResponse> => {
   try {
     console.log('generateApiKey: Function called');
     console.log('generateApiKey: Request body:', JSON.stringify(req.body, null, 2));
     
-    const pool = getGlobalPool();
-
     console.log('Starting API key generation...');
 
     // Validate required fields from request body
