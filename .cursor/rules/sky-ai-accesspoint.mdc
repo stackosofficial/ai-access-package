@@ -1,9 +1,7 @@
 ---
-description: 
-globs: 
 alwaysApply: false
 ---
-# ai-access-point SDK Rules (Updated)
+# ai-access-point SDK Rules (Updated v0.2.0)
 
 ## 1. No Socket.IO or WebSocket Support
 - All Socket.IO and WebSocket code, tests, and documentation are deprecated and must not be used.
@@ -80,11 +78,87 @@ app.get('/auth/callback', async (req: Request, res: Response) => {
 });
 ```
 
-## 5. Streaming
+## 5. AgentCollection Verification (Optional)
+- **AgentCollection is an optional field** that can be provided in requests to verify agent ownership on-chain
+- When provided, the SDK automatically verifies that the user owns the specified agent collection and agent ID
+- **Format**: `agentCollection` object with `agentAddress` (required) and `agentID` (optional)
+- **Verification**: SDK checks if user owns the agent collection or has admin role, and if agentID is provided, verifies ownership of that specific agent
+
+### **AgentCollection Request Format**
+```json
+{
+  "prompt": "Your AI request",
+  "userAuthPayload": {
+    "userAddress": "0x1234567890abcdef",
+    "signature": "0x...",
+    "message": "1713033600000"
+  },
+  "accountNFT": {
+    "collectionID": "0",
+    "nftID": "53"
+  },
+  "agentCollection": {
+    "agentAddress": "0xabcdef1234567890",  // Required: Agent collection contract address
+    "agentID": "123"                        // Optional: Specific agent ID to verify ownership
+  }
+}
+```
+
+### **AgentCollection Verification Logic**
+1. **If `agentID` is provided**: Verify user owns the specific agent NFT
+2. **If `agentID` is not provided**: Verify user has admin role on the agent collection
+3. **Verification failure**: Request is rejected with authentication error
+4. **Verification success**: Request proceeds with agent context
+
+### **Example AgentCollection Usage**
+```typescript
+// Request with agent collection verification
+const response = await axios.post('http://localhost:3000/natural-request', {
+  prompt: "Analyze my agent's performance and suggest improvements",
+  userAuthPayload: signature.data,
+  accountNFT: {
+    "collectionID": "0",
+    "nftID": "53"
+  },
+  agentCollection: {
+    "agentAddress": "0xabcdef1234567890",
+    "agentID": "123"
+  }
+});
+```
+
+### **AgentCollection in Natural Function**
+```typescript
+const runNaturalFunction = async (
+  req: Request,
+  res: Response,
+  balanceRunMain: BalanceRunMain,
+  responseHandler: ResponseHandler
+): Promise<void> => {
+  try {
+    const { prompt, accountNFT, userAuthPayload, agentCollection } = req.body;
+    
+    // AgentCollection is automatically verified by the SDK middleware
+    // If verification fails, the request won't reach this function
+    
+    if (agentCollection) {
+      console.log(`Processing request with agent: ${agentCollection.agentAddress}, ID: ${agentCollection.agentID || 'all'}`);
+      responseHandler.sendUpdate("Processing request with agent context...");
+    }
+    
+    // Your AI processing logic here
+    // ...
+  } catch (error) {
+    responseHandler.sendError(error.message, 500);
+  }
+};
+```
+
+## 6. Streaming
 - Streaming is supported only via HTTP Server-Sent Events (SSE) using the `stream=true` query parameter.
 - Use the `ResponseHandler` interface for all responses, including streaming.
 
-## 6. Testing Requirements and Restrictions
+## 7. Testing Requirements and Restrictions
 
 ### **MANDATORY: Use Test Scripts Only**
 - **❌ NEVER use curl or Postman** for testing AI Access Point endpoints
@@ -160,11 +234,11 @@ curl -X POST http://localhost:3000/auth-link  # DON'T DO THIS
 - All test scripts must use HTTP REST (axios/fetch) only.
 - No socket or websocket tests are required or allowed.
 
-## 7. Project Structure
+## 8. Project Structure
 - All authentication logic for third-party apps must be implemented as a subclass of `AuthService` in `src/services/`.
 - No code or tests should reference or import socket.io or websocket libraries.
 
-## 8. OAuth Callback Security Requirements
+## 9. OAuth Callback Security Requirements
 - **Callback URLs must NOT have any authentication middleware** (no auth tokens, no user validation)
 - The callback endpoint should be publicly accessible to receive OAuth responses from third-party services
 - **Security is handled through state verification**: Compare received state/code with temporary auth state stored during auth link generation
@@ -204,7 +278,7 @@ app.get('/auth/callback', async (req: Request, res: Response) => {
 });
 ```
 
-## 9. Required Testing Scripts
+## 10. Required Testing Scripts
 - **Always provide test scripts** for every third-party service implementation
 - **Two-phase testing approach**:
 
@@ -304,16 +378,16 @@ testNaturalRequests();
 - **Test both success and error scenarios**
 - **Include example prompts** for each supported action
 
-## 10. Required Dependencies (Exact Versions)
+## 11. Required Dependencies (Exact Versions)
 ```json
 {
   "dependencies": {
     "@decloudlabs/skynet": "0.6.25",
-    "@decloudlabs/sky-ai-accesspoint": "0.0.88",
+    "@decloudlabs/sky-ai-accesspoint": "0.2.0",
     "@ethersproject/wallet": "^5.7.0",
     "@supabase/supabase-js": "^2.39.0",
     "axios": "^1.9.0",
-    "ethers": "^6.14.3",
+    "ethers": "^6.15.0",
     "express": "^4.19.2",
     "firebase-admin": "^13.1.0",
     "jsonwebtoken": "^9.0.2",
@@ -334,7 +408,7 @@ testNaturalRequests();
 }
 ```
 
-## 11. Required Skynet Client Setup (Fixed Code)
+## 12. Required Skynet Client Setup (Fixed Code)
 ```typescript
 import SkyMainNodeJS from '@decloudlabs/skynet/lib/services/SkyMainNodeJS';
 import SkyEnvConfigNodeJS from '@decloudlabs/skynet/lib/types/types';
@@ -377,7 +451,7 @@ export const getSkyNode = async (): Promise<SkyMainNodeJS> => {
 
 **Note:** Storage API environment variables (LIGHTHOUSE_API_KEY, IPFS_PROJECT_ID, etc.) are optional and can be any placeholder string if not needed.
 
-## 12. Main Access Point Initialization
+## 13. Main Access Point Initialization
 
 ### Option A: With File Upload Support
 ```typescript
@@ -688,7 +762,7 @@ const setup = async () => {
 setup().catch(console.error);
 ```
 
-## 11. Custom Auth Service Implementation (Third-Party Auth)
+## 14. Custom Auth Service Implementation (Third-Party Auth)
 
 ### Example: Gmail Auth Service
 ```typescript
@@ -939,7 +1013,7 @@ FRONTEND_URL=http://localhost:3000
 JWT_SECRET=<your-jwt-secret>
 ```
 
-## 12. Test Scripts (HTTP REST Only)
+## 15. Test Scripts (HTTP REST Only)
 
 ### Test Script for Upload Support (FormData)
 ```typescript
@@ -1067,6 +1141,130 @@ if (require.main === module) {
 }
 
 export { runUploadTests };
+```
+
+### Test Script for AgentCollection Verification
+```typescript
+// test/agent-collection.test.ts
+import axios from 'axios';
+import { getSkyNode } from "../src/clients/skynet";
+import SkyMainNodeJS from "@decloudlabs/skynet/lib/services/SkyMainNodeJS";
+
+async function testAgentCollectionVerification() {
+  try {
+    const skyNode: SkyMainNodeJS = await getSkyNode();
+    const signature = await skyNode.appManager.getUrsulaAuth();
+
+    console.log("🤖 Testing AgentCollection verification...");
+
+    // Test 1: AgentCollection with specific agent ID
+    const response1 = await axios.post('http://localhost:3000/natural-request', {
+      prompt: "Analyze my agent's performance",
+      userAuthPayload: signature.data,
+      accountNFT: {
+        "collectionID": "0",
+        "nftID": "53"
+      },
+      agentCollection: {
+        agentAddress: "0xabcdef1234567890",
+        agentID: "123"
+      }
+    }, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (response1.status === 200 && response1.data.success) {
+      console.log("✅ AgentCollection with agent ID test passed");
+    } else {
+      console.log("❌ AgentCollection with agent ID test failed:", response1.data);
+      return false;
+    }
+
+    // Test 2: AgentCollection without agent ID (admin role check)
+    const response2 = await axios.post('http://localhost:3000/natural-request', {
+      prompt: "Get all my agents' status",
+      userAuthPayload: signature.data,
+      accountNFT: {
+        "collectionID": "0",
+        "nftID": "53"
+      },
+      agentCollection: {
+        agentAddress: "0xabcdef1234567890"
+        // No agentID - will check admin role
+      }
+    }, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (response2.status === 200 && response2.data.success) {
+      console.log("✅ AgentCollection admin role test passed");
+    } else {
+      console.log("❌ AgentCollection admin role test failed:", response2.data);
+      return false;
+    }
+
+    // Test 3: Invalid AgentCollection (should fail)
+    try {
+      const response3 = await axios.post('http://localhost:3000/natural-request', {
+        prompt: "Test with invalid agent",
+        userAuthPayload: signature.data,
+        accountNFT: {
+          "collectionID": "0",
+          "nftID": "53"
+        },
+        agentCollection: {
+          agentAddress: "0xinvalidaddress",
+          agentID: "999"
+        }
+      });
+
+      if (response3.status === 401) {
+        console.log("✅ Invalid AgentCollection test passed (correctly rejected)");
+      } else {
+        console.log("❌ Invalid AgentCollection test failed (should have been rejected)");
+        return false;
+      }
+    } catch (error) {
+      if (error.response?.status === 401) {
+        console.log("✅ Invalid AgentCollection test passed (correctly rejected)");
+      } else {
+        console.log("❌ Invalid AgentCollection test error:", error.response?.data || error.message);
+        return false;
+      }
+    }
+
+    console.log("✅ All AgentCollection verification tests passed");
+    return true;
+  } catch (error) {
+    console.error("❌ AgentCollection verification test error:", error.response?.data || error.message);
+    return false;
+  }
+}
+
+// Run AgentCollection tests
+async function runAgentCollectionTests() {
+  console.log("🤖 Starting AgentCollection verification tests...\n");
+  
+  const result = await testAgentCollectionVerification();
+  
+  console.log("\n📊 AgentCollection Test Results:");
+  console.log("AgentCollection Verification:", result ? "✅ PASS" : "❌ FAIL");
+  
+  console.log("\n🎯 AgentCollection Tests Result:", result ? "✅ ALL TESTS PASSED" : "❌ TESTS FAILED");
+  
+  return result;
+}
+
+// Run tests if this file is executed directly
+if (require.main === module) {
+  runAgentCollectionTests().then(success => process.exit(success ? 0 : 1));
+}
+
+export { runAgentCollectionTests };
 ```
 
 ### Test Script for Non-Upload Support (JSON)
@@ -1485,6 +1683,7 @@ import { runUploadTests } from './upload.test';
 import { runNonUploadTests } from './non-upload.test';
 import { runAuthTests } from './auth.test';
 import { runIntegrationTests } from './integration.test';
+import { runAgentCollectionTests } from './agent-collection.test';
 
 async function runAllTests() {
   console.log("🚀 Starting all tests...\n");
@@ -1493,7 +1692,8 @@ async function runAllTests() {
     upload: await runUploadTests(),
     nonUpload: await runNonUploadTests(),
     auth: await runAuthTests(),
-    integration: await runIntegrationTests()
+    integration: await runIntegrationTests(),
+    agentCollection: await runAgentCollectionTests()
   };
 
   console.log("\n📊 Overall Test Results:");
@@ -1501,6 +1701,7 @@ async function runAllTests() {
   console.log("Non-Upload Tests:", results.nonUpload ? "✅ PASS" : "❌ FAIL");
   console.log("Auth Tests:", results.auth ? "✅ PASS" : "❌ FAIL");
   console.log("Integration Tests:", results.integration ? "✅ PASS" : "❌ FAIL");
+  console.log("AgentCollection Tests:", results.agentCollection ? "✅ PASS" : "❌ FAIL");
 
   const allPassed = Object.values(results).every(result => result);
   console.log("\n🎯 Overall Result:", allPassed ? "✅ ALL TESTS PASSED" : "❌ SOME TESTS FAILED");
@@ -1803,7 +2004,7 @@ if (require.main === module) {
 export { runAllTests };
 ```
 
-## 14. Final Testing Rule: Build and Test After Setup
+## 17. Final Testing Rule: Build and Test After Setup
 
 ### **MANDATORY: Test Your Implementation**
 After completing your AI Access Point setup, you **MUST** test it with the following steps:
@@ -2094,6 +2295,9 @@ Response: { result: 'Analyzing: example.com', extractedParams: {...} }
 📁 Testing file upload...
 ✅ Upload test passed
 
+🤖 Testing AgentCollection verification...
+✅ AgentCollection test passed
+
 📡 Testing streaming...
 ✅ Streaming test passed
 📡 Stream update: Processing your request...
@@ -2104,6 +2308,7 @@ Health Check: ✅ PASS
 Auth Link: ✅ PASS
 Natural Request: ✅ PASS
 File Upload: ✅ PASS
+AgentCollection: ✅ PASS
 Streaming: ✅ PASS
 
 🎯 Overall Result: ✅ ALL TESTS PASSED
@@ -2172,6 +2377,7 @@ npm run build
 - ✅ **Auth link generation** - `POST /auth-link` returns valid URL
 - ✅ **Natural request** - `POST /natural-request` processes requests
 - ✅ **File upload** - `POST /natural-request` with FormData works (if supported)
+- ✅ **AgentCollection verification** - `POST /natural-request` with agentCollection verifies ownership
 - ✅ **Streaming** - `POST /natural-request?stream=true` returns SSE
 - ✅ **All tests pass** - `npx ts-node test.ts` shows all ✅ PASS
 
@@ -2185,7 +2391,7 @@ npm run build
 
 **Remember:** This comprehensive test ensures your AI Access Point is fully functional and ready for real-world use!
 
-## 16. REST API Endpoint Rules: Use Only SDK-Provided Endpoints
+## 18. REST API Endpoint Rules: Use Only SDK-Provided Endpoints
 
 ### **MANDATORY: Use Only SDK-Provided Endpoints**
 Your AI Access Point **MUST** use only the REST API endpoints provided by the SDK. Do not create custom endpoints for different types of requests.
@@ -2498,20 +2704,35 @@ async function testSingleEndpoint() {
     {
       name: "Content Generation",
       prompt: "Generate a blog post about AI trends"
+    },
+    {
+      name: "Agent Analysis",
+      prompt: "Analyze my agent's performance and suggest improvements",
+      agentCollection: {
+        agentAddress: "0xabcdef1234567890",
+        agentID: "123"
+      }
     }
   ];
 
   for (const testCase of testCases) {
     console.log(`Testing: ${testCase.name}`);
     
-    const response = await axios.post('http://localhost:3000/natural-request', {
+    const requestBody: any = {
       prompt: testCase.prompt,
       userAuthPayload: signature.data,
       accountNFT: {
         "collectionID": "0",
         "nftID": "53"
       }
-    });
+    };
+
+    // Add agentCollection if provided
+    if (testCase.agentCollection) {
+      requestBody.agentCollection = testCase.agentCollection;
+    }
+    
+    const response = await axios.post('http://localhost:3000/natural-request', requestBody);
 
     console.log(`✅ ${testCase.name}:`, response.data.data.service);
   }
