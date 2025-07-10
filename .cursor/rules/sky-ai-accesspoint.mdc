@@ -31,6 +31,8 @@ The SDK automatically creates these endpoints during initialization:
 
 - **`/auth-link` (POST)**: Returns an auth link for the user. Requires `userAuthPayload` and `accountNFT` as **JSON strings** in the body.
 - **`/auth-status` (POST)**: Returns boolean for whether the user is authenticated. Requires `userAuthPayload` and `accountNFT` as **JSON strings** in the body.
+- **`/generate-api-key` (POST)**: Generates a new API key for the authenticated user. Requires `userAuthPayload` and `accountNFT` as **JSON strings** in the body.
+- **`/revoke-api-key` (POST)**: Revokes an existing API key. Requires `userAuthPayload`, `accountNFT`, and `apiKey` in the body.
 
 ### **Developer-Required Endpoint**
 Developers must manually add the OAuth callback endpoint:
@@ -78,7 +80,167 @@ app.get('/auth/callback', async (req: Request, res: Response) => {
 });
 ```
 
-## 5. AgentCollection Verification (Optional)
+## 5. API Key Management (SDK-Automated Endpoints)
+
+### **SDK-Automated API Key Endpoints (No Developer Action Required)**
+The SDK automatically creates these API key management endpoints during initialization:
+
+- **`/generate-api-key` (POST)**: Generates a new API key for the authenticated user. Requires `userAuthPayload` and `accountNFT` as **JSON strings** in the body.
+- **`/revoke-api-key` (POST)**: Revokes an existing API key. Requires `userAuthPayload`, `accountNFT`, and `apiKey` in the body.
+
+### **API Key Generation**
+```typescript
+// Generate API key using SDK-generated authentication
+const genResponse = await axios.post(`http://localhost:${process.env.PORT || 3003}/generate-api-key`, {
+  userAuthPayload: JSON.stringify(userAuthPayload),
+  accountNFT: JSON.stringify({
+    collectionID: "0",
+    nftID: "123",
+  })
+}, {
+  headers: { 'Content-Type': 'application/json' }
+});
+
+const apiKey = genResponse.data.data.apiKey;
+console.log("[SOCKET] API Key:", apiKey);
+```
+
+### **API Key Usage in Natural Requests**
+```typescript
+// Make natural request using API key authentication
+const serverUrl = `http://localhost:${process.env.PORT || 3003}/natural-request`;
+const response = await axios.post(serverUrl, testRequest, {
+  headers: {
+    'Content-Type': 'application/json',
+    'x-api-key': apiKey
+  }
+});
+
+// Log response
+console.log("\n====== RESPONSE ======");
+console.log("Status:", response.status);
+console.log("Success:", response.data.success);
+console.log("Message:", response.data.message);
+console.log("Data:", JSON.stringify(response.data.data, null, 2));
+console.log("======================\n");
+
+console.log("✅ Test completed successfully.");
+```
+
+### **API Key Revocation**
+```typescript
+// Revoke API key
+const revokeResponse = await axios.post(`http://localhost:${process.env.PORT || 3003}/revoke-api-key`, {
+  userAuthPayload: JSON.stringify(userAuthPayload),
+  accountNFT: JSON.stringify({
+    collectionID: "0",
+    nftID: "123",
+  }),
+  apiKey: "your-api-key-to-revoke"
+}, {
+  headers: { 'Content-Type': 'application/json' }
+});
+
+console.log("API Key revoked:", revokeResponse.data.success);
+```
+
+### **API Key Authentication Flow**
+1. **Generate API Key**: User calls `/generate-api-key` with wallet authentication
+2. **Use API Key**: User includes API key in `x-api-key` header for subsequent requests
+3. **Revoke API Key**: User calls `/revoke-api-key` to invalidate the key
+4. **Automatic Validation**: SDK middleware validates API keys for all protected endpoints
+
+### **API Key Security Features**
+- **Unique per user**: Each API key is tied to a specific wallet address
+- **Revocable**: Users can revoke their own API keys
+- **Header-based**: API keys are sent via `x-api-key` header
+- **Automatic validation**: SDK middleware validates all API key requests
+- **Database storage**: API keys are securely stored in PostgreSQL database
+
+### **Complete API Key Test Script**
+```typescript
+// test-api-keys.ts
+import axios from 'axios';
+import { getSkyNode } from './src/clients/skynet';
+
+async function testApiKeys() {
+  const skyNode = await getSkyNode();
+  const signature = await skyNode.appManager.getUrsulaAuth();
+  
+  try {
+    // Step 1: Generate API key
+    console.log("🔑 Generating API key...");
+    const genResponse = await axios.post(`http://localhost:${process.env.PORT || 3003}/generate-api-key`, {
+      userAuthPayload: JSON.stringify(signature.data),
+      accountNFT: JSON.stringify({
+        collectionID: "0",
+        nftID: "123",
+      })
+    }, {
+      headers: { 'Content-Type': 'application/json' }
+    });
+    
+    const apiKey = genResponse.data.data.apiKey;
+    console.log("✅ API Key generated:", apiKey);
+    
+    // Step 2: Test natural request with API key
+    console.log("\n🧪 Testing natural request with API key...");
+    const testRequest = {
+      prompt: "Hello, this is a test request using API key authentication"
+    };
+    
+    const serverUrl = `http://localhost:${process.env.PORT || 3003}/natural-request`;
+    const response = await axios.post(serverUrl, testRequest, {
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey
+      }
+    });
+    
+    console.log("✅ Natural request successful:");
+    console.log("Status:", response.status);
+    console.log("Success:", response.data.success);
+    console.log("Message:", response.data.message);
+    console.log("Data:", JSON.stringify(response.data.data, null, 2));
+    
+    // Step 3: Revoke API key
+    console.log("\n🗑️ Revoking API key...");
+    const revokeResponse = await axios.post(`http://localhost:${process.env.PORT || 3003}/revoke-api-key`, {
+      userAuthPayload: JSON.stringify(signature.data),
+      accountNFT: JSON.stringify({
+        collectionID: "0",
+        nftID: "123",
+      }),
+      apiKey: apiKey
+    }, {
+      headers: { 'Content-Type': 'application/json' }
+    });
+    
+    console.log("✅ API Key revoked:", revokeResponse.data.success);
+    
+    // Step 4: Verify API key is invalid
+    console.log("\n🔍 Verifying API key is invalid...");
+    try {
+      await axios.post(serverUrl, testRequest, {
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey
+        }
+      });
+      console.log("❌ API key should be invalid but request succeeded");
+    } catch (error) {
+      console.log("✅ API key correctly invalidated:", error.response?.status);
+    }
+    
+  } catch (error) {
+    console.error('❌ API Key test failed:', error.response?.data || error.message);
+  }
+}
+
+testApiKeys();
+```
+
+## 6. AgentCollection Verification (Optional)
 - **AgentCollection is an optional field** that can be provided in requests to verify agent ownership on-chain
 - When provided, the SDK automatically verifies that the user owns the specified agent collection and agent ID
 - **Format**: `agentCollection` object with `agentAddress` (required) and `agentID` (optional)
@@ -154,11 +316,11 @@ const runNaturalFunction = async (
 };
 ```
 
-## 6. Streaming
+## 7. Streaming
 - Streaming is supported only via HTTP Server-Sent Events (SSE) using the `stream=true` query parameter.
 - Use the `ResponseHandler` interface for all responses, including streaming.
 
-## 7. Testing Requirements and Restrictions
+## 8. Testing Requirements and Restrictions
 
 ### **MANDATORY: Use Test Scripts Only**
 - **❌ NEVER use curl or Postman** for testing AI Access Point endpoints
@@ -234,11 +396,11 @@ curl -X POST http://localhost:3000/auth-link  # DON'T DO THIS
 - All test scripts must use HTTP REST (axios/fetch) only.
 - No socket or websocket tests are required or allowed.
 
-## 8. Project Structure
+## 9. Project Structure
 - All authentication logic for third-party apps must be implemented as a subclass of `AuthService` in `src/services/`.
 - No code or tests should reference or import socket.io or websocket libraries.
 
-## 9. OAuth Callback Security Requirements
+## 10. OAuth Callback Security Requirements
 - **Callback URLs must NOT have any authentication middleware** (no auth tokens, no user validation)
 - The callback endpoint should be publicly accessible to receive OAuth responses from third-party services
 - **Security is handled through state verification**: Compare received state/code with temporary auth state stored during auth link generation
@@ -278,7 +440,7 @@ app.get('/auth/callback', async (req: Request, res: Response) => {
 });
 ```
 
-## 10. Required Testing Scripts
+## 11. Required Testing Scripts
 - **Always provide test scripts** for every third-party service implementation
 - **Two-phase testing approach**:
 
@@ -378,7 +540,7 @@ testNaturalRequests();
 - **Test both success and error scenarios**
 - **Include example prompts** for each supported action
 
-## 11. Required Dependencies (Exact Versions)
+## 12. Required Dependencies (Exact Versions)
 ```json
 {
   "dependencies": {
@@ -408,7 +570,7 @@ testNaturalRequests();
 }
 ```
 
-## 12. Required Skynet Client Setup (Fixed Code)
+## 13. Required Skynet Client Setup (Fixed Code)
 ```typescript
 import SkyMainNodeJS from '@decloudlabs/skynet/lib/services/SkyMainNodeJS';
 import SkyEnvConfigNodeJS from '@decloudlabs/skynet/lib/types/types';
@@ -451,7 +613,7 @@ export const getSkyNode = async (): Promise<SkyMainNodeJS> => {
 
 **Note:** Storage API environment variables (LIGHTHOUSE_API_KEY, IPFS_PROJECT_ID, etc.) are optional and can be any placeholder string if not needed.
 
-## 13. Main Access Point Initialization
+## 14. Main Access Point Initialization
 
 ### Option A: With File Upload Support
 ```typescript
@@ -762,7 +924,7 @@ const setup = async () => {
 setup().catch(console.error);
 ```
 
-## 14. Custom Auth Service Implementation (Third-Party Auth)
+## 15. Custom Auth Service Implementation (Third-Party Auth)
 
 ### Example: Gmail Auth Service
 ```typescript
@@ -1013,7 +1175,7 @@ FRONTEND_URL=http://localhost:3000
 JWT_SECRET=<your-jwt-secret>
 ```
 
-## 15. Test Scripts (HTTP REST Only)
+## 16. Test Scripts (HTTP REST Only)
 
 ### Test Script for Upload Support (FormData)
 ```typescript
@@ -1756,7 +1918,7 @@ curl -X POST http://localhost:3000/auth-status \
   }'
 ```
 
-## 13. Testing Rules (Strict Requirements)
+## 17. Testing Rules (Strict Requirements)
 
 ### **NO TESTING LIBRARIES ALLOWED**
 - ❌ **NO Jest** - Do not use Jest testing framework
@@ -2004,7 +2166,7 @@ if (require.main === module) {
 export { runAllTests };
 ```
 
-## 17. Final Testing Rule: Build and Test After Setup
+## 18. Final Testing Rule: Build and Test After Setup
 
 ### **MANDATORY: Test Your Implementation**
 After completing your AI Access Point setup, you **MUST** test it with the following steps:
@@ -2391,7 +2553,7 @@ npm run build
 
 **Remember:** This comprehensive test ensures your AI Access Point is fully functional and ready for real-world use!
 
-## 18. REST API Endpoint Rules: Use Only SDK-Provided Endpoints
+## 19. REST API Endpoint Rules: Use Only SDK-Provided Endpoints
 
 ### **MANDATORY: Use Only SDK-Provided Endpoints**
 Your AI Access Point **MUST** use only the REST API endpoints provided by the SDK. Do not create custom endpoints for different types of requests.
@@ -2402,7 +2564,9 @@ The SDK automatically creates these endpoints during initialization:
 1. **`POST /natural-request`** - Main endpoint for all AI processing
 2. **`POST /auth-link`** - OAuth authentication link generation
 3. **`POST /auth-status`** - Check authentication status
-4. **`GET /health`** - Health check endpoint (optional)
+4. **`POST /generate-api-key`** - Generate API key for user
+5. **`POST /revoke-api-key`** - Revoke existing API key
+6. **`GET /health`** - Health check endpoint (optional)
 
 ### **❌ FORBIDDEN: Custom Endpoints**
 Do NOT create any of these custom endpoints:
