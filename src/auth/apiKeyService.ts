@@ -201,7 +201,7 @@ export const masterValidation = async (req: any, skyNode: SkyMainNodeJS, pool: P
       console.log(`AccountNFT ownership verification successful for API key: ${apiKey}`);
 
       // Log API usage with service info
-      await logApiUsage(rows[0].id, '/natural-request', req?.serviceId);
+      await logApiUsage(rows[0].id, '/natural-request', pool, req?.serviceId);
 
       // If request object is provided, attach the API key ID for later use
       if (req) {
