@@ -7,6 +7,8 @@ import {
 } from "@decloudlabs/skynet/lib/types/types";
 import { getServerCostCalculator } from "../utils/utils";
 import SkyMainNodeJS from "@decloudlabs/skynet/lib/services/SkyMainNodeJS";
+import { SUBNET_COLLECTION_ID } from "@decloudlabs/skynet/lib/utils/constants";
+import { ethers } from "ethers";
 
 export const checkBalance = async (
   req: Request,
@@ -66,7 +68,64 @@ export const checkBalance = async (
       boolean
     >(serverCostContract.isEnabled(accountNFT), (res) => res);
 
-    console.log("isEnabledResp", isEnabledResp);
+    const walletHandlerAddress = await serverCostContract.walletHandler();
+    console.log("walletHandlerAddress", walletHandlerAddress);
+
+    // Create wallet handler contract instance
+    const walletHandlerContract = new ethers.Contract(
+      walletHandlerAddress,
+      [
+        {
+          "inputs": [
+            {
+              "components": [
+                {
+                  "internalType": "uint256",
+                  "name": "collectionID",
+                  "type": "uint256"
+                },
+                {
+                  "internalType": "uint256",
+                  "name": "nftID",
+                  "type": "uint256"
+                }
+              ],
+              "internalType": "struct IAccountNFT.AccountNFT",
+              "name": "",
+              "type": "tuple"
+            },
+            {
+              "internalType": "uint256",
+              "name": "",
+              "type": "uint256"
+            }
+          ],
+          "name": "getAccountBalance",
+          "outputs": [
+            {
+              "internalType": "uint256",
+              "name": "",
+              "type": "uint256"
+            }
+          ],
+          "stateMutability": "pure",
+          "type": "function"
+        }
+      ],
+      skyNode.contractService.signer
+    );
+
+    // Convert string values to BigInt for contract call
+    const accountNFTForContract = {
+      collectionID: BigInt(accountNFT.collectionID),
+      nftID: BigInt(accountNFT.nftID)
+    };
+    const subnetID = BigInt(process.env.SUBNET_ID || "0");
+
+    const availableBalance = await skyNode.contractService.callContractRead<
+      bigint,
+      bigint
+    >(walletHandlerContract.getAccountBalance(accountNFTForContract, subnetID), (res) => res);
 
     if (!isEnabledResp.success) {
       console.log(`❌ Balance check failed: NFT ${accountNFT.collectionID}:${accountNFT.nftID} is not enabled`);
@@ -74,6 +133,30 @@ export const checkBalance = async (
         success: false,
         data: new Error("Not authorized to access this route").toString(),
       });
+    }
+
+    // Check minimum balance requirement
+    const minimumBalance = BigInt(process.env.MINIMUM_BALANCE || "0");
+    if (minimumBalance > 0) {
+      if (!availableBalance.success) {
+        console.log(`❌ Balance check failed: Could not retrieve balance for NFT ${accountNFT.collectionID}:${accountNFT.nftID}`);
+        return res.json({
+          success: false,
+          data: new Error("Not authorized to access this route").toString(),
+        });
+      }
+
+      if (availableBalance.data < minimumBalance) {
+        console.log(`❌ Insufficient balance: NFT ${accountNFT.collectionID}:${accountNFT.nftID} has ${availableBalance.data} but minimum required is ${minimumBalance}`);
+        return res.json({
+          success: false,
+          data: new Error("Insufficient balance").toString(),
+        });
+      }
+
+      console.log(`✅ Balance check passed: NFT ${accountNFT.collectionID}:${accountNFT.nftID} has ${availableBalance.data} (minimum required: ${minimumBalance})`);
+    } else {
+      console.log(`ℹ️ Balance check skipped: MINIMUM_BALANCE is 0 or not set`);
     }
 
     next();
