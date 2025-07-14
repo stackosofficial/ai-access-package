@@ -15,6 +15,7 @@ import { Pool } from "pg";
 
 let skyNode: SkyMainNodeJS;
 let authService: AuthService | null = null;
+let globalPostgresUrl: string | null = null;
 
 export const setupSkyNode = async (skyNodeParam: SkyMainNodeJS) => {
   skyNode = skyNodeParam;
@@ -22,6 +23,14 @@ export const setupSkyNode = async (skyNodeParam: SkyMainNodeJS) => {
 
 export const getSkyNode = () => {
   return skyNode;
+};
+
+// Global function to get PostgreSQL URL
+export const getGlobalPostgresUrl = (): string => {
+  if (!globalPostgresUrl) {
+    throw new Error('PostgreSQL URL not initialized. Make sure to call initAIAccessPoint first.');
+  }
+  return globalPostgresUrl;
 };
 
 // Response handler class to unify regular and streaming responses
@@ -105,7 +114,7 @@ export type RunNaturalFunctionType = (
 
 export interface AIAccessPointConfig {
   apiKeyConfig?: ApiKeyConfig;
-  authService?: AuthService;
+  authServiceClass?: new () => AuthService;  // Changed: accept class instead of instance
 }
 
 export const initAIAccessPoint = async (
@@ -119,6 +128,7 @@ export const initAIAccessPoint = async (
 ): Promise<APICallReturn<BalanceRunMain>> => {
   try {
     await setupSkyNode(skyNodeParam);
+    globalPostgresUrl = env.POSTGRES_URL;
 
     const balanceRunMain = new BalanceRunMain(env, 60 * 1000, skyNodeParam);
 
@@ -147,14 +157,23 @@ export const initAIAccessPoint = async (
       }
     });
 
+    // Test the database connection
+    try {
+      await pool.query('SELECT 1');
+      console.log("✅ Database connection established successfully");
+    } catch (error) {
+      console.error("❌ Database connection failed:", error);
+      throw new Error(`Database connection failed: ${error}`);
+    }
+
 
     // Initialize auth service
-    if (config?.authService) {
-      authService = config.authService;
+    if (config?.authServiceClass) {
+      authService = new config.authServiceClass();
       console.log("✅ Custom auth service initialized successfully");
     } else {
       // Create default auth service if none provided
-      authService = createAuthService(env.POSTGRES_URL);
+      authService = createAuthService();
       console.log("✅ Default auth service initialized successfully");
     }
 
@@ -205,51 +224,51 @@ export const initAIAccessPoint = async (
 
     // Add auth-link endpoint
     app.post("/auth-link", parseAuth, async (req: Request, res: Response, next: NextFunction) => {
-      const authVerified = await protect(req, res, next, skyNodeParam, pool);
-      if (!authVerified) {
-        res.sendStatus(401);
-        return;
-      }
-      try {
-        const userAddress = req.body.walletAddress;
-        const nftId = req.body.accountNFT.nftID;
+      await protect(req, res, next, skyNodeParam, pool);
+    },
+      async (req: Request, res: Response, next: NextFunction) =>
+        await checkBalance(req, res, next, contractAddress, skyNodeParam),
+      async (req: Request, res: Response, next: NextFunction) => {
+        try {
+          const userAddress = req.body.walletAddress;
+          const nftId = req.body.accountNFT.nftID;
 
-        if (!userAddress || !nftId) {
-          return res.status(400).json({
+          if (!userAddress || !nftId) {
+            return res.status(400).json({
+              success: false,
+              error: "userAddress and nftId are required"
+            });
+          }
+
+          if (!authService) {
+            return res.status(500).json({
+              success: false,
+              error: "Auth service not configured"
+            });
+          }
+
+          const authLink = await authService.generateAuthLink(userAddress, nftId);
+
+          res.json({
+            success: true,
+            data: { link: authLink }
+          });
+        } catch (error: any) {
+          console.error("❌ Error in auth-link handler:", error);
+          res.status(500).json({
             success: false,
-            error: "userAddress and nftId are required"
+            error: error.message || "Internal server error"
           });
         }
-
-        if (!authService) {
-          return res.status(500).json({
-            success: false,
-            error: "Auth service not configured"
-          });
-        }
-
-        const authLink = await authService.generateAuthLink(userAddress, nftId);
-
-        res.json({
-          success: true,
-          data: { link: authLink }
-        });
-      } catch (error: any) {
-        console.error("❌ Error in auth-link handler:", error);
-        res.status(500).json({
-          success: false,
-          error: error.message || "Internal server error"
-        });
-      }
-    });
+      });
 
     // Add auth-status endpoint
     app.post("/auth-status", parseAuth, async (req: Request, res: Response, next: NextFunction) => {
-      const authVerified = await protect(req, res, next, skyNodeParam, pool);
-      if (!authVerified) {
-        res.sendStatus(401);
-        return;
-      }
+      await protect(req, res, next, skyNodeParam, pool);
+    },
+      async (req: Request, res: Response, next: NextFunction) =>
+        await checkBalance(req, res, next, contractAddress, skyNodeParam),
+      async (req: Request, res: Response, next: NextFunction) => {
       try {
         const userAddress = req.body.userAuthPayload?.userAddress;
         const nftId = req.body.accountNFT?.nftID;
@@ -317,11 +336,11 @@ export const initAIAccessPoint = async (
 
     // Add API key revocation endpoint using masterValidation
     app.post("/revoke-api-key", parseAuth, async (req: Request, res: Response, next: NextFunction) => {
-      const authVerified = await protect(req, res, next, skyNodeParam, pool);
-      if (!authVerified) {
-        res.sendStatus(401);
-        return;
-      }
+      await protect(req, res, next, skyNodeParam, pool);
+    },
+      async (req: Request, res: Response, next: NextFunction) =>
+        await checkBalance(req, res, next, contractAddress, skyNodeParam),
+      async (req: Request, res: Response, next: NextFunction) => {
       try {
         const walletAddress = req.body.walletAddress;
         const { apiKey } = req.body;
@@ -362,6 +381,46 @@ export const initAIAccessPoint = async (
       }
     });
 
+    // Add auth revocation endpoint
+    app.post("/revoke-auth", parseAuth, async (req: Request, res: Response, next: NextFunction) => {
+      await protect(req, res, next, skyNodeParam, pool);
+    },
+      async (req: Request, res: Response, next: NextFunction) =>
+        await checkBalance(req, res, next, contractAddress, skyNodeParam),
+      async (req: Request, res: Response, next: NextFunction) => {
+        try {
+          const userAddress = req.body.walletAddress;
+          const nftId = req.body.accountNFT.nftID;
+
+          if (!userAddress || !nftId) {
+            return res.status(400).json({
+              success: false,
+              error: "userAddress and nftId are required"
+            });
+          }
+
+          if (!authService) {
+            return res.status(500).json({
+              success: false,
+              error: "Auth service not configured"
+            });
+          }
+
+          await authService.revokeAuth(userAddress, nftId);
+
+          res.json({
+            success: true,
+            message: "Auth revoked successfully"
+          });
+        } catch (error: any) {
+          console.error("❌ Error in revoke-auth handler:", error);
+          res.status(500).json({
+            success: false,
+            error: error.message || "Internal server error"
+          });
+        }
+      });
+
     // Add global error handling middleware
     app.use((error: any, req: Request, res: Response, next: NextFunction) => {
       console.error("❌ [GLOBAL ERROR HANDLER] Unhandled error:", error);
@@ -398,3 +457,9 @@ export const initAIAccessPoint = async (
 
 // Export auth service for developer use
 export const getAuthService = () => authService;
+
+// Function to set auth service after initialization
+export const setAuthService = (newAuthService: AuthService) => {
+  authService = newAuthService;
+  console.log("✅ Auth service updated successfully");
+};
