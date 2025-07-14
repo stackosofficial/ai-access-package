@@ -6,21 +6,21 @@ import {
   SkyContractService,
 } from "@decloudlabs/skynet/lib/types/types";
 import { getServerCostCalculator } from "../utils/utils";
+import SkyMainNodeJS from "@decloudlabs/skynet/lib/services/SkyMainNodeJS";
 
 export const checkBalance = async (
   req: Request,
   res: Response,
   next: NextFunction,
-  SERVER_COST_CONTRACT_ADDRESS: string
+  SERVER_COST_CONTRACT_ADDRESS: string,
+  skyNode: SkyMainNodeJS
 ) => {
   try {
     const readByte32 =
       "0x917ec7ea41e5f357223d15148fe9b320af36ca576055af433ea3445b39221799";
     const contractBasedDeploymentByte32 =
       "0x503cf060389b91af8851125bd70ce66d16d12330718b103fc7674ef6d27e70c9";
-    const { accountNFT, userAuthPayload } = req.body;
-
-    const { message, signature, userAddress } = userAuthPayload;
+    const { accountNFT, walletAddress } = req.body;
 
     if (!accountNFT) {
       return res.json({
@@ -29,19 +29,16 @@ export const checkBalance = async (
       });
     }
 
-    // check the owner of nft is the userAddress
-    const skyNode = await getSkyNode();
-
     const ownerAddress = await skyNode.contractService.CollectionNFT.ownerOf(
       accountNFT
     );
 
-    if (ownerAddress.toLowerCase() !== userAddress.toLowerCase()) {
+    if (ownerAddress.toLowerCase() !== walletAddress.toLowerCase()) {
       const callHasRole = async (roleValue: string) =>
         await hasRole(
           accountNFT,
           roleValue,
-          userAddress,
+          walletAddress,
           skyNode.contractService
         );
 
@@ -51,7 +48,7 @@ export const checkBalance = async (
       ]);
 
       if (!hasReadRoleResp && !hasDeployerRoleResp) {
-        console.log(`❌ Access denied: User ${userAddress} lacks required roles for NFT ${accountNFT.collectionID}:${accountNFT.nftID}`);
+        console.log(`❌ Access denied: User ${walletAddress} lacks required roles for NFT ${accountNFT.collectionID}:${accountNFT.nftID}`);
         return res.json({
           success: false,
           data: new Error("Not authorized to access this route").toString(),
@@ -68,6 +65,8 @@ export const checkBalance = async (
       boolean,
       boolean
     >(serverCostContract.isEnabled(accountNFT), (res) => res);
+
+    console.log("isEnabledResp", isEnabledResp);
 
     if (!isEnabledResp.success) {
       console.log(`❌ Balance check failed: NFT ${accountNFT.collectionID}:${accountNFT.nftID} is not enabled`);

@@ -138,9 +138,6 @@ export const initAIAccessPoint = async (
       balanceRunMain.update();
     }
 
-    // Make skyNode globally available for middleware
-    (global as any).skyNode = skyNodeParam;
-
     const pool = new Pool({
       connectionString: env.POSTGRES_URL,
       ssl: {
@@ -148,8 +145,6 @@ export const initAIAccessPoint = async (
       }
     });
 
-    (global as any).globalPool = pool;
-    (global as any).globalPostgresUrl = env.POSTGRES_URL;
 
     // Initialize auth service
     if (config?.authService) {
@@ -168,11 +163,6 @@ export const initAIAccessPoint = async (
 
     // Handler function that wraps runNaturalFunction with ResponseHandler
     const handleRequest = async (req: Request, res: Response, next: NextFunction) => {
-      const authVerified = await protect(req, res, next, skyNodeParam, pool);
-      if (!authVerified) {
-        res.sendStatus(401);  
-        return;
-      }
       try {
         const responseHandler = new ResponseHandlerImpl(req, res);
         await runNaturalFunction(req, res, balanceRunMain, responseHandler);
@@ -191,16 +181,22 @@ export const initAIAccessPoint = async (
         "/natural-request",
         upload.array("files"),
         parseAuth,
-        (req: Request, res: Response, next: NextFunction) =>
-          checkBalance(req, res, next, contractAddress),
+        async (req: Request, res: Response, next: NextFunction) => {
+          await protect(req, res, next, skyNodeParam, pool);
+        },
+        async (req: Request, res: Response, next: NextFunction) =>
+          await checkBalance(req, res, next, contractAddress, skyNodeParam),
         handleRequest
       );
     } else {
       app.post(
         "/natural-request",
         parseAuth,
-        (req: Request, res: Response, next: NextFunction) =>
-          checkBalance(req, res, next, contractAddress),
+        async (req: Request, res: Response, next: NextFunction) => {
+          await protect(req, res, next, skyNodeParam, pool);
+        },
+        async (req: Request, res: Response, next: NextFunction) =>
+          await checkBalance(req, res, next, contractAddress, skyNodeParam),
         handleRequest
       );
     }
@@ -209,7 +205,7 @@ export const initAIAccessPoint = async (
     app.post("/auth-link", parseAuth, async (req: Request, res: Response, next: NextFunction) => {
       const authVerified = await protect(req, res, next, skyNodeParam, pool);
       if (!authVerified) {
-        res.sendStatus(401);  
+        res.sendStatus(401);
         return;
       }
       try {
@@ -249,7 +245,7 @@ export const initAIAccessPoint = async (
     app.post("/auth-status", parseAuth, async (req: Request, res: Response, next: NextFunction) => {
       const authVerified = await protect(req, res, next, skyNodeParam, pool);
       if (!authVerified) {
-        res.sendStatus(401);  
+        res.sendStatus(401);
         return;
       }
       try {
@@ -284,16 +280,16 @@ export const initAIAccessPoint = async (
         });
       }
     });
-    
+
     // Add API key generation endpoint using masterValidation
     app.post("/generate-api-key",
       parseAuth,
       async (req: Request, res: Response, next: NextFunction) => {
-        const authVerified = await protect(req, res, next, skyNodeParam, pool);
-        if (!authVerified) {
-          res.sendStatus(401);  
-          return;
-        }
+        await protect(req, res, next, skyNodeParam, pool);
+      },
+      async (req: Request, res: Response, next: NextFunction) =>
+        await checkBalance(req, res, next, contractAddress, skyNodeParam),
+      async (req: Request, res: Response, next: NextFunction) => {
         try {
           const result = await generateApiKey(req, pool);
           if (result.error) {
@@ -321,7 +317,7 @@ export const initAIAccessPoint = async (
     app.post("/revoke-api-key", parseAuth, async (req: Request, res: Response, next: NextFunction) => {
       const authVerified = await protect(req, res, next, skyNodeParam, pool);
       if (!authVerified) {
-        res.sendStatus(401);  
+        res.sendStatus(401);
         return;
       }
       try {

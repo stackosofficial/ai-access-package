@@ -29,7 +29,7 @@ export const protect = async (req: Request, res: Response, next: NextFunction, s
       walletAddress: validationResult.walletAddress,
     }
     req.body = {...req.body, ...newBody};
-    return true;
+    next();
   } catch (err) {
     return res.status(500).json({
       success: false,
