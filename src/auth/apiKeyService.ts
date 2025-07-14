@@ -7,77 +7,8 @@ import {
   validateAgentCollection,
 } from './ownershipVerification';
 
-// Create database tables
-const createTables = async (client: any): Promise<void> => {
-  // Create API keys table
-  await client.query(`
-    CREATE TABLE IF NOT EXISTS api_keys (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      key TEXT NOT NULL UNIQUE,
-      wallet_address TEXT NOT NULL,
-      nft_collection_id TEXT NOT NULL,
-      nft_id TEXT NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      last_used_at TIMESTAMPTZ
-    );
-    
-    CREATE INDEX IF NOT EXISTS idx_api_keys_key ON api_keys(key);
-    CREATE INDEX IF NOT EXISTS idx_api_keys_wallet ON api_keys(wallet_address);
-    CREATE INDEX IF NOT EXISTS idx_api_keys_nft ON api_keys(wallet_address, nft_collection_id, nft_id);
-  `);
-
-  // Create usage logs table
-  await client.query(`
-    CREATE TABLE IF NOT EXISTS api_usage_logs (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      api_key_id UUID REFERENCES api_keys(id) ON DELETE CASCADE,
-      endpoint TEXT NOT NULL,
-      method TEXT NOT NULL,
-      status_code INTEGER,
-      service_id TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_api_usage_logs_api_key ON api_usage_logs(api_key_id);
-    CREATE INDEX IF NOT EXISTS idx_api_usage_logs_created_at ON api_usage_logs(created_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_api_usage_logs_service_id ON api_usage_logs(service_id);
-  `);
-
-  // Create function to update last_used_at
-  await client.query(`
-    CREATE OR REPLACE FUNCTION update_api_key_last_used()
-    RETURNS TRIGGER AS $$
-    BEGIN
-        UPDATE api_keys
-        SET last_used_at = CURRENT_TIMESTAMP
-        WHERE id = NEW.api_key_id;
-        RETURN NEW;
-    END;
-    $$ LANGUAGE plpgsql;
-
-    DROP TRIGGER IF EXISTS update_api_key_last_used_trigger ON api_usage_logs;
-    CREATE TRIGGER update_api_key_last_used_trigger
-    AFTER INSERT ON api_usage_logs
-    FOR EACH ROW
-    EXECUTE FUNCTION update_api_key_last_used();
-  `);
-};
-
-// Initialize API key tables
-export const initializeApiKeyTables = async (pool: Pool): Promise<void> => {
-  try {
-    const client = await pool.connect();
-    try {
-      await createTables(client);
-      console.log('✅ API key tables initialized successfully');
-    } finally {
-      client.release();
-    }
-  } catch (error: any) {
-    console.error('❌ Error initializing API key tables:', error);
-    throw new Error(`Failed to initialize API key tables: ${error.message}`);
-  }
-};
+// Note: API key tables are now managed by the centralized DatabaseMigration system
+// See src/database/tableSchemas.ts for table definitions
 
 // Validate signature
 export const validateSignature = async (address: string, signature: string, message: string, skyNode: SkyMainNodeJS): Promise<boolean> => {
@@ -136,22 +67,8 @@ export const logApiUsage = async (apiKeyId: string, endpoint: string = '/natural
     // Attempt to insert the log entry
     await pool.query('INSERT INTO api_usage_logs (api_key_id, endpoint, method, status_code, service_id) VALUES ($1, $2, $3, $4, $5)', [apiKeyId, endpoint, 'POST', 200, serviceId]);
   } catch (error: any) {
-    // If error occurs, check if it's due to missing table
-    if (error.code === '42P01') { // Table doesn't exist error
-      console.warn('⚠️ api_usage_logs table does not exist. Attempting to create it...');
-      try {
-        await initializeApiKeyTables(pool);
-        // Retry log insertion after table creation
-        if (pool) {
-          await pool.query('INSERT INTO api_usage_logs (api_key_id, endpoint, method, status_code, service_id) VALUES ($1, $2, $3, $4, $5)', [apiKeyId, endpoint, 'POST', 200, serviceId]);
-        }
-      } catch (setupError) {
-        console.error('❌ Failed to create api_usage_logs table:', setupError);
-      }
-    } else {
-      console.error('❌ Failed to log API usage:', error);
-    }
-    // Don't throw error as this is not critical
+    // Log error but don't throw - API usage logging is not critical
+    console.error('❌ Failed to log API usage:', error);
   }
 };
 

@@ -5,8 +5,10 @@ import { APICallReturn } from "@decloudlabs/skynet/lib/types/types";
 import { checkBalance } from "../middleware/checkBalance";
 import { protect } from "../middleware/auth";
 import { parseAuth } from "../middleware/parseAuth";
-import { generateApiKey, revokeApiKey, initializeApiKeyTables } from "../auth/apiKeyService";
+import { generateApiKey, revokeApiKey } from "../auth/apiKeyService";
 import { AuthService, createAuthService } from "../auth/authService";
+import { DatabaseMigration } from "../database/databaseMigration";
+import { getAllTableSchemas } from "../database/tableSchemas";
 import express, { Request, Response, NextFunction } from "express";
 import multer from "multer";
 import { Pool } from "pg";
@@ -149,17 +151,17 @@ export const initAIAccessPoint = async (
     // Initialize auth service
     if (config?.authService) {
       authService = config.authService;
-      await authService.initTable();
       console.log("✅ Custom auth service initialized successfully");
     } else {
       // Create default auth service if none provided
       authService = createAuthService(env.POSTGRES_URL);
-      await authService.initTable();
       console.log("✅ Default auth service initialized successfully");
     }
 
-    // Initialize API key tables
-    await initializeApiKeyTables(pool);
+    // Initialize all database tables using centralized migration
+    const migration = new DatabaseMigration(pool);
+    const allTableSchemas = getAllTableSchemas(env.SUBNET_ID);
+    await migration.migrateTables(allTableSchemas);
 
     // Handler function that wraps runNaturalFunction with ResponseHandler
     const handleRequest = async (req: Request, res: Response, next: NextFunction) => {

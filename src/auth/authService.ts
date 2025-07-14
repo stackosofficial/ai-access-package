@@ -1,17 +1,7 @@
 import { Pool } from 'pg';
 
-// Database table creation SQL
-const CREATE_AUTH_TABLE_SQL = `
-CREATE TABLE IF NOT EXISTS auth_data (
-  user_address TEXT NOT NULL,
-  nft_id TEXT NOT NULL,
-  backend_id TEXT NOT NULL DEFAULT 'default',
-  auth_data JSONB,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  PRIMARY KEY (user_address, nft_id, backend_id)
-);
-`;
+// Database table creation SQL - now handled by centralized migration
+
 
 // Abstract Auth Class
 export abstract class AuthService {
@@ -70,15 +60,7 @@ export abstract class AuthService {
     }
   }
 
-  // Initialize database table
-  async initTable(): Promise<void> {
-    try {
-      await this.pool.query(CREATE_AUTH_TABLE_SQL);
-    } catch (error) {
-      console.error('Error initializing auth table:', error);
-      throw error;
-    }
-  }
+
 }
 
 // Factory function to create auth service

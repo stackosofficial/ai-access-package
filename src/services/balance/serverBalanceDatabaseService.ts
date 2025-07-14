@@ -3,6 +3,8 @@ import { apiCallWrapper } from "@decloudlabs/skynet/lib/utils/utils";
 import ENVConfig from "../../core/envConfig";
 import { NFTCosts } from "../../types/types";
 import { Pool, PoolClient, QueryResult } from 'pg';
+import { DatabaseMigration } from "../../database/databaseMigration";
+import { getBalanceTableSchemas } from "../../database/tableSchemas";
 
 export default class ServerBalanceDatabaseService {
   private envConfig: ENVConfig;
@@ -20,48 +22,8 @@ export default class ServerBalanceDatabaseService {
     await this.setupDatabase();
   };
 
-  private getNFTId(accountNFT: AccountNFT): string {
-    return `${accountNFT.collectionID}_${accountNFT.nftID}`;
-  }
-
-  private async createTables(client: PoolClient) {
-    // Create costs table
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS ${this.costsTable} (
-        id SERIAL PRIMARY KEY,
-        collection_id TEXT NOT NULL,
-        nft_id TEXT NOT NULL,
-        costs TEXT NOT NULL,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(collection_id, nft_id)
-      );
-      
-      CREATE INDEX IF NOT EXISTS idx_${this.costsTable}_collection_nft 
-      ON ${this.costsTable}(collection_id, nft_id);
-      
-      CREATE INDEX IF NOT EXISTS idx_${this.costsTable}_costs 
-      ON ${this.costsTable}(costs);
-    `);
-
-    // Create history table
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS ${this.historyTable} (
-        id SERIAL PRIMARY KEY,
-        collection_id TEXT NOT NULL,
-        nft_id TEXT NOT NULL,
-        costs TEXT NOT NULL,
-        applied BOOLEAN DEFAULT FALSE,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-      );
-      
-      CREATE INDEX IF NOT EXISTS idx_${this.historyTable}_applied 
-      ON ${this.historyTable}(applied);
-      
-      CREATE INDEX IF NOT EXISTS idx_${this.historyTable}_created_at 
-      ON ${this.historyTable}(created_at DESC);
-    `);
+  private getTableSchemas() {
+    return getBalanceTableSchemas(this.envConfig.env.SUBNET_ID);
   }
 
   setExtractBalance = async (
@@ -200,14 +162,21 @@ export default class ServerBalanceDatabaseService {
         }
       });
 
-      // Test connection and create tables
-      const client = await this.pool.connect();
-      try {
-        await this.createTables(client);
-        console.log("✅ Connected to PostgreSQL and tables are ready");
-      } finally {
-        client.release();
+      // Test connection and run migrations
+      const migration = new DatabaseMigration(this.pool);
+      const tableSchemas = this.getTableSchemas();
+      
+      await migration.migrateTables(tableSchemas);
+      
+      // Validate table structures after migration
+      for (const schema of tableSchemas) {
+        const isValid = await migration.validateTableStructure(schema.tableName, schema.requiredColumns);
+        if (!isValid) {
+          throw new Error(`Table ${schema.tableName} structure validation failed`);
+        }
       }
+      
+      console.log("✅ Connected to PostgreSQL and tables are ready");
     } catch (error: any) {
       console.error("❌ Error initializing PostgreSQL:", error);
       throw new Error(`Failed to initialize PostgreSQL: ${error.message}`);
