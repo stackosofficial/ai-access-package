@@ -100,7 +100,7 @@ export default class ServerBalanceDatabaseService {
         client.release();
       }
     } catch (error) {
-      console.error("Error in setExtractBalance:", error);
+      console.error("❌ Error in setExtractBalance:", error);
       return { success: false, data: error as Error };
     }
   };
@@ -133,7 +133,7 @@ export default class ServerBalanceDatabaseService {
         },
       };
     } catch (error) {
-      console.error("Error in getExtractBalance:", error);
+      console.error("❌ Error in getExtractBalance:", error);
       return { success: false, data: error as Error };
     }
   };
@@ -204,12 +204,12 @@ export default class ServerBalanceDatabaseService {
       const client = await this.pool.connect();
       try {
         await this.createTables(client);
-        console.log("Connected to PostgreSQL and tables are ready");
+        console.log("✅ Connected to PostgreSQL and tables are ready");
       } finally {
         client.release();
       }
     } catch (error: any) {
-      console.error("Error initializing PostgreSQL:", error);
+      console.error("❌ Error initializing PostgreSQL:", error);
       throw new Error(`Failed to initialize PostgreSQL: ${error.message}`);
     }
   };
@@ -242,7 +242,7 @@ export default class ServerBalanceDatabaseService {
 
       return { success: true, data: costs };
     } catch (error) {
-      console.error("Error in getUnappliedCosts:", error);
+      console.error("❌ Error in getUnappliedCosts:", error);
       return { success: false, data: error as Error };
     }
   };
@@ -263,7 +263,7 @@ export default class ServerBalanceDatabaseService {
 
       return { success: true, data: rowCount || 0 };
     } catch (error) {
-      console.error("Error in markCostsAsApplied:", error);
+      console.error("❌ Error in markCostsAsApplied:", error);
       return { success: false, data: error as Error };
     }
   };

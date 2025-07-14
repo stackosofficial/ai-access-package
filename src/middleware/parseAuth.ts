@@ -12,7 +12,6 @@ import "../types/types"; // Import types for global declarations
 
 export const parseAuth = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    console.log("parseAuth called");
     // Set auth info if API key is present
     const apiKey = req.headers["x-api-key"];
 
@@ -22,7 +21,6 @@ export const parseAuth = async (req: Request, res: Response, next: NextFunction)
 
     // If no auth data provided and no API key, let masterValidation handle the error
     if (!userAuthPayloadRaw && !accountNFTRaw && !apiKey) {
-      console.log("parseAuth called 2");
       return next();
     }
 
@@ -76,12 +74,9 @@ export const parseAuth = async (req: Request, res: Response, next: NextFunction)
       req.body.accountNFT = accountNFT;
     }
 
-    console.log("parseAuth called 3");
-    console.log("parseAuth: About to call next() - moving to protect middleware");
-    console.log("parseAuth: Request URL:", req.url);
-    console.log("parseAuth: Request method:", req.method);
     next();
   } catch (error: any) {
+    console.error("❌ Error in parseAuth middleware:", error);
     return res.status(400).json({
       success: false,
       data: `Failed to parse auth data: ${error.message}`,

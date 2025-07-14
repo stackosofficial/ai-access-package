@@ -48,7 +48,7 @@ export default class BalanceExtractService {
         return await operation();
       } catch (error) {
         lastError = error as Error;
-        console.error(`Attempt ${i + 1} failed:`, error);
+        console.error(`❌ Attempt ${i + 1} failed:`, error);
         if (i < retries - 1) {
           await this.delay(RETRY_DELAY * Math.pow(2, i)); // Exponential backoff
         }
@@ -70,7 +70,6 @@ export default class BalanceExtractService {
     const processedNFTs: NFTCosts[] = [];
 
     const nftTimestamps = await getNFTTimestamp(nftCostsBatch, this.envConfig);
-    console.log("NFT timestamps:", nftTimestamps);
 
     try {
       const resp = await this.retryOperation(() =>
@@ -79,7 +78,7 @@ export default class BalanceExtractService {
 
       if (!resp.success) {
         console.error(
-          `Failed to add cost to contract for NFT: ${JSON.stringify(
+          `❌ Failed to add cost to contract for NFT batch: ${JSON.stringify(
             nftCostsBatch
           )}`
         );
@@ -106,10 +105,10 @@ export default class BalanceExtractService {
             "0" // Reset costs to 0 after processing
           );
         }
-        console.log(`Successfully processed ${processedNFTs.length} NFTs`);
+        console.log(`✅ Successfully processed ${processedNFTs.length} NFTs`);
       }
     } catch (error) {
-      console.error("Failed to process batch:", error);
+      console.error("❌ Failed to process batch:", error);
       throw error;
     }
   }
@@ -129,14 +128,14 @@ export default class BalanceExtractService {
           await this.processBatch(batch);
         } catch (error) {
           console.error(
-            `Failed to process batch starting at index ${i}:`,
+            `❌ Failed to process batch starting at index ${i}:`,
             error
           );
           // Continue with next batch even if this one failed
         }
       }
     } catch (error) {
-      console.error("Error in scanNFTBalancesInternal:", error);
+      console.error("❌ Error in scanNFTBalancesInternal:", error);
     }
   };
 
@@ -167,7 +166,6 @@ const getNFTTimestamp = async (nftCosts: NFTCosts[], envConfig: ENVConfig) => {
     (res) => res.map((r) => Number(r))
   );
 
-  console.log("Contract response:", response);
   return response;
 };
 
@@ -187,12 +185,10 @@ const addCostToContract = async (
     cost: nftCosts.costs,
   }));
 
-  console.log("Adding costs to contract:", contractInput);
   const response = await skyNode.contractService.callContractWrite(
     serverCostCalculator.setNFTCosts(contractInput, true)
   );
 
-  console.log("Contract response:", response);
   return response;
 };
 

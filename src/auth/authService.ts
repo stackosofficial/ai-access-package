@@ -74,7 +74,6 @@ export abstract class AuthService {
   async initTable(): Promise<void> {
     try {
       await this.pool.query(CREATE_AUTH_TABLE_SQL);
-      console.log('Auth table initialized successfully');
     } catch (error) {
       console.error('Error initializing auth table:', error);
       throw error;

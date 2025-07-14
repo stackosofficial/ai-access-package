@@ -27,7 +27,6 @@ export default class BalanceRunMain {
       this.envConfig.env.JSON_RPC_PROVIDER,
       undefined
     );
-    console.log("json rpc: ", this.envConfig.env.JSON_RPC_PROVIDER);
 
     this.signer = new ethers.Wallet(
       this.envConfig.env.WALLET_PRIVATE_KEY,
@@ -56,7 +55,7 @@ export default class BalanceRunMain {
       return true;
     } catch (err: any) {
       const error: Error = err;
-      console.log("main setup error: ", error);
+      console.error("❌ Main setup error:", error);
       return false;
     }
   };
@@ -74,7 +73,7 @@ export default class BalanceRunMain {
         await this.balanceExtractService.update();
       } catch (err: any) {
         const error: Error = err;
-        console.error("error in update: ", error);
+        console.error("❌ Error in update:", error);
       }
     }
   };
@@ -86,11 +85,9 @@ export default class BalanceRunMain {
     const extractBalanceResp =
       await this.serverBalanceDatabaseService.getExtractBalance(accountNFT);
     if (!extractBalanceResp.success) {
-      console.error("failed to get extract balance: ", extractBalanceResp.data);
+      console.error("❌ Failed to get extract balance:", extractBalanceResp.data);
       return extractBalanceResp;
     }
-
-    console.log("extract balance: ", extractBalanceResp.data);
 
     const resp = await this.serverBalanceDatabaseService.setExtractBalance(
       accountNFT,

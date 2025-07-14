@@ -131,7 +131,6 @@ export const initAIAccessPoint = async (
     );
     if (contAddrResp.success == false) return contAddrResp;
     const contractAddress = contAddrResp.data;
-    console.log("contractAddress", contractAddress);
     balanceRunMain.envConfig.env.SERVER_COST_CONTRACT_ADDRESS = contractAddress;
 
     await balanceRunMain.setup();
@@ -156,17 +155,16 @@ export const initAIAccessPoint = async (
     if (config?.authService) {
       authService = config.authService;
       await authService.initTable();
-      console.log("Auth service initialized successfully");
+      console.log("✅ Custom auth service initialized successfully");
     } else {
       // Create default auth service if none provided
       authService = createAuthService(env.POSTGRES_URL);
       await authService.initTable();
-      console.log("Default auth service initialized successfully");
+      console.log("✅ Default auth service initialized successfully");
     }
 
     // Initialize API key tables
     await initializeApiKeyTables(pool);
-    console.log("API key tables initialized successfully");
 
     // Handler function that wraps runNaturalFunction with ResponseHandler
     const handleRequest = async (req: Request, res: Response, next: NextFunction) => {
@@ -176,11 +174,10 @@ export const initAIAccessPoint = async (
         return;
       }
       try {
-        console.log("handleRequest: Starting request processing");
         const responseHandler = new ResponseHandlerImpl(req, res);
         await runNaturalFunction(req, res, balanceRunMain, responseHandler);
       } catch (error: any) {
-        console.error("Error in request handler:", error);
+        console.error("❌ Error in request handler:", error);
         if (!res.headersSent) {
           res.status(500).json({ error: error.message || "Internal server error" });
         }
@@ -240,7 +237,7 @@ export const initAIAccessPoint = async (
           data: { link: authLink }
         });
       } catch (error: any) {
-        console.error("Error in auth-link handler:", error);
+        console.error("❌ Error in auth-link handler:", error);
         res.status(500).json({
           success: false,
           error: error.message || "Internal server error"
@@ -280,7 +277,7 @@ export const initAIAccessPoint = async (
           data: isAuthenticated
         });
       } catch (error: any) {
-        console.error("Error in auth-status handler:", error);
+        console.error("❌ Error in auth-status handler:", error);
         res.status(500).json({
           success: false,
           error: error.message || "Internal server error"
@@ -359,7 +356,7 @@ export const initAIAccessPoint = async (
           message: "API key revoked successfully"
         });
       } catch (error: any) {
-        console.error("Error in revoke-api-key handler:", error);
+        console.error("❌ Error in revoke-api-key handler:", error);
         res.status(500).json({
           success: false,
           error: error.message || "Internal server error"
@@ -369,8 +366,8 @@ export const initAIAccessPoint = async (
 
     // Add global error handling middleware
     app.use((error: any, req: Request, res: Response, next: NextFunction) => {
-      console.error("🔍 [GLOBAL ERROR HANDLER] Unhandled error:", error);
-      console.error("🔍 [GLOBAL ERROR HANDLER] Stack trace:", error.stack);
+      console.error("❌ [GLOBAL ERROR HANDLER] Unhandled error:", error);
+      console.error("❌ [GLOBAL ERROR HANDLER] Stack trace:", error.stack);
 
       if (!res.headersSent) {
         res.status(500).json({
@@ -383,16 +380,17 @@ export const initAIAccessPoint = async (
 
     // Add 404 handler for unmatched routes
     app.use((req: Request, res: Response) => {
-      console.log("🔍 [404 HANDLER] No route matched:", req.method, req.path);
+      console.log("⚠️ [404 HANDLER] No route matched:", req.method, req.path);
       res.status(404).json({
         success: false,
         error: "Route not found"
       });
     });
 
+    console.log("✅ AI Access Point initialized successfully");
     return { success: true, data: balanceRunMain };
   } catch (error: any) {
-    console.error("Error in initAIAccessPoint:", error);
+    console.error("❌ Error in initAIAccessPoint:", error);
     return {
       success: false,
       data: new Error(`Failed to initialize AI Access Point: ${error.message}`),

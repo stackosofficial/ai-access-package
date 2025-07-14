@@ -9,8 +9,6 @@ import {
 
 // Create database tables
 const createTables = async (client: any): Promise<void> => {
-  console.log('Creating API keys table...');
-  
   // Create API keys table
   await client.query(`
     CREATE TABLE IF NOT EXISTS api_keys (
@@ -27,8 +25,6 @@ const createTables = async (client: any): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_api_keys_wallet ON api_keys(wallet_address);
     CREATE INDEX IF NOT EXISTS idx_api_keys_nft ON api_keys(wallet_address, nft_collection_id, nft_id);
   `);
-  
-  console.log('API keys table created successfully');
 
   // Create usage logs table
   await client.query(`
@@ -70,16 +66,15 @@ const createTables = async (client: any): Promise<void> => {
 // Initialize API key tables
 export const initializeApiKeyTables = async (pool: Pool): Promise<void> => {
   try {
-    console.log('Initializing API key tables...');
     const client = await pool.connect();
     try {
       await createTables(client);
-      console.log('API key tables initialized successfully');
+      console.log('✅ API key tables initialized successfully');
     } finally {
       client.release();
     }
   } catch (error: any) {
-    console.error('Error initializing API key tables:', error);
+    console.error('❌ Error initializing API key tables:', error);
     throw new Error(`Failed to initialize API key tables: ${error.message}`);
   }
 };
@@ -106,7 +101,7 @@ export const validateSignature = async (address: string, signature: string, mess
     try {
       verificationResult = await ursulaService.authenticateSignature(authPayload);
     } catch (error) {
-      console.error('SkyNet signature verification error:', error);
+      console.error('❌ SkyNet signature verification error:', error);
       throw new Error(`SkyNet signature verification failed: ${error instanceof Error ? error.message : String(error)}`);
     }
 
@@ -114,10 +109,10 @@ export const validateSignature = async (address: string, signature: string, mess
       throw new Error('SkyNet signature verification failed. Please ensure your message and signature are valid.');
     }
 
-    console.log(`Signature verified by SkyNet for address: ${address}`);
+    console.log(`✅ Signature verified for address: ${address}`);
     return true;
   } catch (error: any) {
-    console.error('Signature validation error:', error);
+    console.error('❌ Signature validation error:', error);
     throw new Error(`Signature validation failed: ${error.message}`);
   }
 };
@@ -143,20 +138,18 @@ export const logApiUsage = async (apiKeyId: string, endpoint: string = '/natural
   } catch (error: any) {
     // If error occurs, check if it's due to missing table
     if (error.code === '42P01') { // Table doesn't exist error
-      console.error('api_usage_logs table does not exist. Attempting to create it...');
+      console.warn('⚠️ api_usage_logs table does not exist. Attempting to create it...');
       try {
         await initializeApiKeyTables(pool);
         // Retry log insertion after table creation
         if (pool) {
           await pool.query('INSERT INTO api_usage_logs (api_key_id, endpoint, method, status_code, service_id) VALUES ($1, $2, $3, $4, $5)', [apiKeyId, endpoint, 'POST', 200, serviceId]);
         }
-
-        console.log('Log inserted successfully after creating table');
       } catch (setupError) {
-        console.error('Failed to create api_usage_logs table:', setupError);
+        console.error('❌ Failed to create api_usage_logs table:', setupError);
       }
     } else {
-      console.error('Failed to log API usage:', error);
+      console.error('❌ Failed to log API usage:', error);
     }
     // Don't throw error as this is not critical
   }
@@ -191,14 +184,12 @@ export const masterValidation = async (req: any, skyNode: SkyMainNodeJS, pool: P
       );
 
       if (!isOwner) {
-        console.error(`AccountNFT ownership verification failed for API key: ${apiKey}`);
+        console.error(`❌ AccountNFT ownership verification failed for API key: ${apiKey}`);
         return {
           isValid: false,
           error: 'API key validation failed - accountNFT ownership verification failed'
         };
       }
-
-      console.log(`AccountNFT ownership verification successful for API key: ${apiKey}`);
 
       // Log API usage with service info
       await logApiUsage(rows[0].id, '/natural-request', pool, req?.serviceId);
@@ -214,9 +205,8 @@ export const masterValidation = async (req: any, skyNode: SkyMainNodeJS, pool: P
         collectionID: rows[0].nft_collection_id,
         nftID: rows[0].nft_id
       };
-      console.log(`API key validation successful for wallet: ${walletAddress}`);
+      console.log(`✅ API key validation successful for wallet: ${walletAddress}`);
     } else {
-      console.log("called validating accountNFT")
       // Step 2: Check if accountNFT is provided in request body (only if no API key)
       if (!req.body || !req.body.accountNFT) {
         return {
@@ -269,11 +259,8 @@ export const masterValidation = async (req: any, skyNode: SkyMainNodeJS, pool: P
       }
 
       walletAddress = providedWalletAddress;
-      console.log(`Using wallet address: ${walletAddress}`);
 
       // Step 2.2: Validate accountNFT ownership
-      console.log(`Validating accountNFT ownership for wallet: ${walletAddress}, collection: ${collectionID}, nft: ${nftID}`);
-
       if (!walletAddress) {
         return {
           isValid: false,
@@ -299,15 +286,13 @@ export const masterValidation = async (req: any, skyNode: SkyMainNodeJS, pool: P
         collectionID,
         nftID
       };
-      console.log(`AccountNFT validation successful for wallet: ${walletAddress}`);
+      console.log(`✅ AccountNFT validation successful for wallet: ${walletAddress}`);
     }
 
     // Step 3: Validate agent collection if provided
     let agentCollection: { agentCollection: string; agentID?: string } | undefined;
 
     if (req.body && req.body.agentCollection) {
-      console.log('Agent collection provided - validating agent collection ownership');
-
       if (!walletAddress) {
         return {
           isValid: false,
@@ -325,8 +310,6 @@ export const masterValidation = async (req: any, skyNode: SkyMainNodeJS, pool: P
         };
       }
 
-      console.log(`Verifying agent collection ownership for wallet: ${walletAddress}, agentCollection: ${agentCollectionAddress}, agentID: ${agentID || 'null'}`);
-
       const isAgentCollectionOwner = await validateAgentCollection(
         agentCollectionAddress,
         agentID || null,
@@ -335,14 +318,13 @@ export const masterValidation = async (req: any, skyNode: SkyMainNodeJS, pool: P
       );
 
       if (!isAgentCollectionOwner) {
-        console.error(`Agent collection ownership verification failed for wallet: ${walletAddress}`);
+        console.error(`❌ Agent collection ownership verification failed for wallet: ${walletAddress}`);
         return {
           isValid: false,
           error: `Agent collection ownership validation failed for wallet: ${walletAddress}`
         };
       }
 
-      console.log(`Agent collection ownership verification successful for wallet: ${walletAddress}`);
       const isAgentCollectionValid = true;
       if (!isAgentCollectionValid) {
         return {
@@ -352,9 +334,7 @@ export const masterValidation = async (req: any, skyNode: SkyMainNodeJS, pool: P
       }
 
       agentCollection = req.body.agentCollection;
-      console.log(`Agent collection validation successful for wallet: ${walletAddress}`);
-    } else {
-      console.log('No agent collection provided - skipping agent collection validation');
+      console.log(`✅ Agent collection validation successful for wallet: ${walletAddress}`);
     }
 
     return {
@@ -364,7 +344,7 @@ export const masterValidation = async (req: any, skyNode: SkyMainNodeJS, pool: P
       agentCollection
     };
   } catch (error) {
-    console.error('Error during master validation:', error);
+    console.error('❌ Error during master validation:', error);
     return {
       isValid: false,
       error: `Master validation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
@@ -382,31 +362,19 @@ const createUniqueApiKey = (walletAddress: string): string => {
 // Generate API key
 export const generateApiKey = async (req: any, pool: Pool): Promise<ApiKeyResponse> => {
   try {
-    console.log('generateApiKey: Function called');
-    console.log('generateApiKey: Request body:', JSON.stringify(req.body, null, 2));
-    
-    console.log('Starting API key generation...');
-
     // Validate required fields from request body
     const walletAddress = req.body.walletAddress;
     const accountNFT = req.body.accountNFT;
-    
-    console.log('generateApiKey: walletAddress:', walletAddress);
-    console.log('generateApiKey: accountNFT:', JSON.stringify(accountNFT, null, 2));
 
     if (!walletAddress) {
-      console.log('Missing walletAddress in request body');
       return { error: 'walletAddress is required' };
     }
 
     if (!accountNFT || !accountNFT.collectionID || !accountNFT.nftID) {
-      console.log('Missing accountNFT or accountNFT details in request body');
       return { error: 'accountNFT with collectionID and nftID is required' };
     }
 
     const { collectionID, nftID } = accountNFT;
-
-    console.log(`Checking for existing API key for wallet: ${walletAddress}, collection: ${collectionID}, nft: ${nftID}`);
 
     // Check for existing key for this specific NFT (active or not)
     const { rows } = await pool.query(
@@ -415,31 +383,26 @@ export const generateApiKey = async (req: any, pool: Pool): Promise<ApiKeyRespon
     );
 
     if (rows.length > 0) {
-      console.log('Found existing API key, returning it');
+      console.log(`✅ Returning existing API key for wallet: ${walletAddress}`);
       return { apiKey: rows[0].key };
     }
 
-    console.log('No existing API key found, generating new one...');
-
     // Generate new API key
     const apiKey = createUniqueApiKey(walletAddress);
-    console.log(`Generated API key: ${apiKey}`);
 
-    console.log('Inserting API key into database...');
     const { rows: insertRows } = await pool.query(
       'INSERT INTO api_keys (key, wallet_address, nft_collection_id, nft_id) VALUES ($1, $2, $3, $4) RETURNING key',
       [apiKey, walletAddress.toLowerCase(), collectionID, nftID]
     );
 
     if (insertRows.length === 0) {
-      console.error('Failed to insert API key - no rows returned');
       throw new Error('Failed to insert API key');
     }
 
-    console.log('API key successfully inserted into database');
+    console.log(`✅ New API key generated for wallet: ${walletAddress}`);
     return { apiKey: insertRows[0].key };
   } catch (error: any) {
-    console.error('Error in generateApiKey:', error);
+    console.error('❌ Error in generateApiKey:', error);
     return { error: `Failed to generate API key: ${error.message}` };
   }
 };

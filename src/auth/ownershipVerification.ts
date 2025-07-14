@@ -26,7 +26,7 @@ export async function validateAgentCollection(
         
         return hasAdminRole;
     } catch (error: any) {
-        console.error('Error validating agent collection:', error);
+        console.error('❌ Error validating agent collection:', error);
         return false;
     }
 }
@@ -38,9 +38,8 @@ export async function validateAccountNFT(
     skyNode: SkyMainNodeJS
 ): Promise<boolean> {
     try {
-        console.log("called validating account nft")
         if (!skyNode) {
-            console.error('validateAccountNFT: SkyNode is not available');
+            console.error('❌ validateAccountNFT: SkyNode is not available');
             throw new Error('SkyNode is not available');
         }
         const accountNFT = {
@@ -51,11 +50,14 @@ export async function validateAccountNFT(
         const ownerAddress = await skyNode.contractService.CollectionNFT.ownerOf(
             accountNFT
         );
-        console.log("ownerAddress", ownerAddress);
-        console.log("userAddress", userAddress);
-        return ownerAddress.toLowerCase() === userAddress.toLowerCase();
+        
+        const isValid = ownerAddress.toLowerCase() === userAddress.toLowerCase();
+        if (isValid) {
+            console.log(`✅ AccountNFT ownership verified for wallet: ${userAddress}`);
+        }
+        return isValid;
     } catch (error) {
-        console.error('Error validating account NFT:', error);
+        console.error('❌ Error validating account NFT:', error);
         return false;
     }
 }
