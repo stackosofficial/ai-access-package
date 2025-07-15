@@ -9,14 +9,319 @@ alwaysApply: false
 - Remove any references to socket.io-client, WebSocketManager, or related test scripts.
 
 ## 2. Authentication Handling for Third-Party Apps
+
+### **AuthService Abstract Class**
 - All third-party authentication must use the new `AuthService` abstract class in `src/services/authService.ts`.
-- The only required methods for a custom AuthService are:
-  - `generateAuthLink(userAddress: string, nftId: string): Promise<string>`
-  - `checkAuthStatus(userAddress: string, nftId: string): Promise<boolean>`
-  - `getAuth(userAddress: string, nftId: string): Promise<any | null>`
-  - `saveAuth(userAddress: string, nftId: string, authData: any): Promise<void>`
-  - `initTable(): Promise<void>` (provided by SDK, not to be overridden)
-- The default implementation throws for `generateAuthLink` and must be overridden by the developer.
+- The AuthService provides a standardized interface for OAuth flows and token management.
+- The SDK automatically manages the global auth service instance and database connections.
+
+### **Required Methods for Custom AuthService**
+The only required methods for a custom AuthService are:
+- `generateAuthLink(userAddress: string, nftId: string): Promise<string>` - Generate OAuth authorization URL
+- `checkAuthStatus(userAddress: string, nftId: string): Promise<boolean>` - Check if user is authenticated
+- `getAuth(userAddress: string, nftId: string): Promise<any | null>` - Retrieve stored auth data
+- `saveAuth(userAddress: string, nftId: string, authData: any): Promise<void>` - Save auth data to database
+- `initTable(): Promise<void>` (provided by SDK, not to be overridden) - Initialize database table
+
+### **AuthService Constructor Pattern**
+- **NO constructor parameters** - AuthService classes should not take any parameters
+- **NO direct database URL or pool passing** in constructors
+- Use the global PostgreSQL URL set during SDK initialization
+- The SDK automatically provides the database pool to the auth service internally
+
+### **Example AuthService Implementation**
+```typescript
+// src/services/GmailAuthService.ts
+import { AuthService } from '@decloudlabs/sky-ai-accesspoint/lib/auth/authService';
+import { Pool } from 'pg';
+import crypto from 'crypto';
+import { google } from 'googleapis';
+import { OAuth2Client } from 'google-auth-library';
+
+export class GmailAuthService extends AuthService {
+  private oauth2Client: OAuth2Client;
+
+  constructor() {
+    super();
+    this.oauth2Client = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      process.env.AUTH_CALLBACK_URL
+    );
+  }
+
+  async generateAuthLink(userAddress: string, nftId: string): Promise<string> {
+    const state = crypto.randomBytes(32).toString('hex');
+    const stateData = { userAddress, service: 'gmail', timestamp: Date.now(), nftId };
+    
+    // Store state for validation
+    if (!(global as any).authStates) {
+      (global as any).authStates = new Map();
+    }
+    (global as any).authStates.set(state, { ...stateData, createdAt: Date.now() });
+
+    // Use expanded scopes for full Gmail functionality
+    const scopes = [
+      'https://www.googleapis.com/auth/gmail.send',
+      'https://www.googleapis.com/auth/gmail.readonly',
+      'https://www.googleapis.com/auth/gmail.modify',
+      'https://www.googleapis.com/auth/gmail.compose'
+    ];
+
+    return this.oauth2Client.generateAuthUrl({
+      access_type: 'offline',
+      scope: scopes,
+      state: state,
+      prompt: 'consent'
+    });
+  }
+
+  async revokeAuth(userAddress: string, nftId: string): Promise<void> {
+    try {
+      // Get current auth data
+      const authData = await this.getAuth(userAddress, nftId);
+      if (authData && authData.access_token) {
+        // Revoke the OAuth token with Google
+        try {
+          await this.oauth2Client.revokeToken(authData.access_token);
+        } catch (error) {
+          console.warn('Failed to revoke OAuth token with Google:', error);
+        }
+      }
+      
+      // Delete from database
+      await this.deleteAuth(userAddress, nftId);
+    } catch (error) {
+      console.error('Error revoking auth:', error);
+      throw error;
+    }
+  }
+
+  async getGmailClient(userAddress: string, nftId: string): Promise<any> {
+    try {
+      const authData = await this.getAuth(userAddress, nftId);
+      if (!authData) {
+        throw new Error('No authentication data found');
+      }
+
+      this.oauth2Client.setCredentials({
+        access_token: authData.access_token,
+        refresh_token: authData.refresh_token
+      });
+
+      return google.gmail({ version: 'v1', auth: this.oauth2Client });
+    } catch (error) {
+      console.error('Failed to get Gmail client:', error);
+      throw error;
+    }
+  }
+}
+```
+
+### **AuthService Initialization in Main App**
+```typescript
+// src/index.ts
+import { initAIAccessPoint, getAuthService } from "@decloudlabs/sky-ai-accesspoint/lib/init";
+import { GmailAuthService } from "./services/GmailAuthService";
+
+const setup = async () => {
+  const skyNode: SkyMainNodeJS = await getSkyNode();
+  const env = {
+    JSON_RPC_PROVIDER: process.env.PROVIDER_RPC!,
+    WALLET_PRIVATE_KEY: process.env.WALLET_PRIVATE_KEY!,
+    SUBNET_ID: process.env.SUBNET_ID!,
+    POSTGRES_URL: process.env.DATABASE_URL!,
+    SERVER_COST_CONTRACT_ADDRESS: process.env.SERVER_COST_CONTRACT_ADDRESS!,
+  };
+
+  const balanceRunMain = await initAIAccessPoint(
+    env,
+    skyNode,
+    app,
+    runNaturalFunction as any,
+    true, // Enable balance updates
+    upload, // Enable file upload middleware for attachments
+    { authServiceClass: GmailAuthService } // Pass auth service class (not instance)
+  );
+
+  if (!balanceRunMain.success) {
+    console.error("Error initializing AI Access Point:", balanceRunMain);
+    process.exit(1);
+  }
+
+  // Add auth routes
+  app.use('/auth', authRoutes);
+
+  app.listen(port, () => {
+    console.log(`Service running on http://localhost:${port}`);
+    console.log(`Auth callback: http://localhost:${port}/auth/callback`);
+  });
+};
+```
+
+### **Accessing AuthService Globally**
+```typescript
+// Get the global auth service instance
+import { getAuthService } from "@decloudlabs/sky-ai-accesspoint/lib/init";
+
+const authService = getAuthService();
+if (authService) {
+  const isAuthenticated = await authService.checkAuthStatus(userAddress, nftId);
+  const authData = await authService.getAuth(userAddress, nftId);
+}
+```
+
+### **AuthService in Natural Function**
+```typescript
+const runNaturalFunction = async (
+  req: Request,
+  res: Response,
+  balanceRunMain: BalanceRunMain,
+  responseHandler: ResponseHandler
+): Promise<void> => {
+  try {
+    const { prompt, accountNFT, userAuthPayload } = req.body;
+    const userAddress = userAuthPayload?.userAddress;
+    const nftId = accountNFT?.nftID;
+
+    // Check authentication using global auth service
+    const authService = getAuthService();
+    if (authService) {
+      const isAuthenticated = await authService.checkAuthStatus(userAddress, nftId);
+      
+      if (!isAuthenticated) {
+        responseHandler.sendFinalResponse({
+          success: true,
+          message: "Authentication required. Please use the /auth-link endpoint.",
+          requiresAuth: true,
+          userAddress: userAddress
+        });
+        return;
+      }
+
+      const authData = await authService.getAuth(userAddress, nftId);
+      console.log('User authenticated:', authData?.emailAddress);
+    }
+
+    // Process authenticated request...
+    responseHandler.sendUpdate("Processing authenticated request...");
+    
+    const processedResult = `Processed: ${prompt}`;
+    const cost = BigInt(0.01 * 1e12);
+    
+    responseHandler.sendFinalResponse({
+      success: true,
+      message: "Request completed successfully",
+      data: { result: processedResult, timestamp: new Date().toISOString() }
+    });
+
+    await balanceRunMain.addCost(accountNFT, cost.toString());
+
+  } catch (error) {
+    responseHandler.sendError(error instanceof Error ? error.message : "Failed to process request", 500);
+  }
+};
+```
+
+### **OAuth Callback Handler**
+```typescript
+// src/routes/authRoutes.ts
+import express, { Request, Response } from 'express';
+import { getAuthService } from '@decloudlabs/sky-ai-accesspoint/lib/init';
+import axios from 'axios';
+
+const router = express.Router();
+
+router.get('/callback', async (req: Request, res: Response) => {
+  try {
+    const { code, state, error } = req.query;
+    
+    if (error || !code || !state) {
+      return res.status(400).json({ success: false, error: 'Invalid OAuth response' });
+    }
+
+    // Validate state
+    global.authStates = global.authStates || new Map();
+    const stateData = global.authStates.get(state as string);
+    if (!stateData) {
+      return res.status(400).json({ success: false, error: 'Invalid state' });
+    }
+
+    const { userAddress, nftId } = stateData;
+
+    // Exchange code for tokens
+    const tokenResponse = await axios.post('https://oauth2.googleapis.com/token', {
+      client_id: process.env.GOOGLE_CLIENT_ID,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET,
+      code,
+      grant_type: 'authorization_code',
+      redirect_uri: process.env.AUTH_CALLBACK_URL
+    });
+
+    // Get user profile
+    const profileResponse = await axios.get('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { 'Authorization': `Bearer ${tokenResponse.data.access_token}` }
+    });
+
+    // Save auth data using global auth service
+    const authData = {
+      service: 'gmail',
+      access_token: tokenResponse.data.access_token,
+      refresh_token: tokenResponse.data.refresh_token,
+      expires_at: tokenResponse.data.expires_in ? Date.now() + (tokenResponse.data.expires_in * 1000) : undefined,
+      userAddress,
+      profile: profileResponse.data,
+      emailAddress: profileResponse.data.email,
+      connectedAt: new Date().toISOString()
+    };
+
+    const authService = getAuthService();
+    if (authService) {
+      await authService.saveAuth(userAddress, nftId, authData);
+    }
+
+    // Clean up and redirect
+    global.authStates.delete(state as string);
+    res.redirect(`${process.env.FRONTEND_URL}/auth/success?service=gmail&userAddress=${userAddress}`);
+
+  } catch (error) {
+    console.error('OAuth callback error:', error);
+    res.redirect(`${process.env.FRONTEND_URL}/auth/error`);
+  }
+});
+
+export default router;
+```
+
+### **Required Environment Variables for Auth**
+```env
+# OAuth Configuration
+GOOGLE_CLIENT_ID=<your-google-client-id>
+GOOGLE_CLIENT_SECRET=<your-google-client-secret>
+AUTH_CALLBACK_URL=http://localhost:3000/auth/callback
+FRONTEND_URL=http://localhost:3000
+JWT_SECRET=<your-jwt-secret>
+
+# Database Configuration
+DATABASE_URL=postgresql://username:password@localhost:5432/database_name
+```
+
+### **AuthService Best Practices**
+1. **Extend AuthService**: Always extend the abstract AuthService class
+2. **No Constructor Parameters**: AuthService classes should not take any constructor parameters
+3. **Pass Class, Not Instance**: Pass the auth service class to `initAIAccessPoint`, not an instance
+4. **Use Global Pool**: Let the SDK manage database connections internally
+5. **State Management**: Implement secure state validation for OAuth flows
+6. **Token Validation**: Check token expiration and validity in checkAuthStatus
+7. **Error Handling**: Implement proper error handling for OAuth failures
+8. **Security**: Never expose sensitive tokens in logs or responses
+9. **Cleanup**: Always clean up temporary state after OAuth completion
+10. **Service-Specific Methods**: Add service-specific methods like `getGmailClient()` for convenience
+
+### **Default Implementation**
+- The default implementation throws for `generateAuthLink` and must be overridden by the developer
+- The `initTable()` method is provided by the SDK and should not be overridden
+- Database table creation is handled automatically during SDK initialization
 
 ## 3. Auth Table (Handled by SDK)
 - The SDK automatically creates and manages the `auth_data` table.
