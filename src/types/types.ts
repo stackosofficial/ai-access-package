@@ -67,3 +67,20 @@ export interface ApiKeyData {
   revoked_at?: string | null;
   last_used_at?: string | null;
 }
+
+// JSON Schema types for AI model response schemas
+export interface JsonSchemaProperty {
+  type: string;
+  items?: JsonSchemaProperty;
+  properties?: Record<string, JsonSchemaProperty>;
+  required?: string[];
+  [key: string]: any; // Allow additional properties like format, description, etc.
+}
+
+export interface JsonSchema {
+  type: string;
+  properties?: Record<string, JsonSchemaProperty>;
+  required?: string[];
+  name?: string;
+  [key: string]: any; // Allow additional properties like format, description, etc.
+}

@@ -1,4 +1,4 @@
-import { AIModelResponse, ENVDefinition } from "../../types/types";
+import { AIModelResponse, ENVDefinition, JsonSchema } from "../../types/types";
 import { AccountNFT, APICallReturn, UrsulaAuth } from "@decloudlabs/skynet/lib/types/types";
 import { sleep } from "@decloudlabs/skynet/lib/utils/utils";
 import BalanceExtractService from "./balanceExtractService";
@@ -103,7 +103,12 @@ export default class BalanceRunMain {
   };
 
   async callAIModel(
-    prompt: string
+    prompt: string,
+    system_prompt?: string,
+    model: string[] = ["qwen/qwen3-14b"],
+    temperature?: number,
+    response_type?: string,
+    response_schema?: JsonSchema,
   ): Promise<any> {
     const skyNode = this.skyNode;
     if(!skyNode){
@@ -126,16 +131,33 @@ export default class BalanceRunMain {
       };
     }
 
-    // const signature = await s
+    // Prepare request data with optional parameters
+    const requestData: any = {
+      prompt,
+      userAuthPayload: userAuthPayload.data,
+      accountNFT,
+      model,
+      response_format: 'json_object'
+    };
+
+    // Add optional parameters if provided
+    if (system_prompt) {
+      requestData.system_prompt = system_prompt;
+    }
+    if (temperature !== undefined) {
+      requestData.temperature = temperature;
+    }
+    if (response_type) {
+      requestData.response_type = response_type;
+    }
+    if (response_schema) {
+      requestData.response_schema = response_schema;
+    }
+
     const response = await axios({
       method: "POST",
-      url: `https://openaiservice-c0n1.stackos.io/natural-request`,
-      data: {
-        prompt,
-        userAuthPayload: userAuthPayload.data,
-        accountNFT,
-        response_format: 'json_object'
-      },
+      url: `https://https://openrouter-c0n623.stackos.io/natural-request`,
+      data: requestData,
       headers: {
         "Content-Type": "application/json",
       },
