@@ -104,6 +104,7 @@ export default class BalanceRunMain {
 
   async callAIModel(
     prompt: string,
+    accountNFT: AccountNFT,
     system_prompt?: string,
     model: string[] = ["qwen/qwen3-14b"],
     temperature?: number,
@@ -119,10 +120,6 @@ export default class BalanceRunMain {
     }
 
     const userAuthPayload = await skyNode.appManager.getUrsulaAuth();
-    const accountNFT: AccountNFT = {
-      collectionID: "0",
-      nftID: "622"
-    }
 
     if(!userAuthPayload.success){
       return {
