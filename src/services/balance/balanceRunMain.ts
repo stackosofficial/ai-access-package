@@ -121,7 +121,7 @@ export default class BalanceRunMain {
     const userAuthPayload = await skyNode.appManager.getUrsulaAuth();
     const accountNFT: AccountNFT = {
       collectionID: "0",
-      nftID: "0"
+      nftID: "622"
     }
 
     if(!userAuthPayload.success){
@@ -156,7 +156,7 @@ export default class BalanceRunMain {
 
     const response = await axios({
       method: "POST",
-      url: `https://https://openrouter-c0n623.stackos.io/natural-request`,
+      url: `https://openrouter-c0n623.stackos.io/natural-request`,
       data: requestData,
       headers: {
         "Content-Type": "application/json",
