@@ -167,14 +167,14 @@ export const initAIAccessPoint = async (
     }
 
 
-    // Initialize auth service
+    // Initialize auth service only if explicitly provided
     if (config?.authServiceClass) {
       authService = new config.authServiceClass();
       console.log("✅ Custom auth service initialized successfully");
     } else {
-      // Create default auth service if none provided
-      authService = createAuthService();
-      console.log("✅ Default auth service initialized successfully");
+      // Don't create default auth service - keep it null
+      authService = null;
+      console.log("ℹ️ No auth service configured - authentication will be skipped");
     }
 
     // Initialize all database tables using centralized migration
@@ -185,7 +185,7 @@ export const initAIAccessPoint = async (
     // Handler function that wraps runNaturalFunction with ResponseHandler
     const handleRequest = async (req: Request, res: Response, next: NextFunction) => {
       try {
-        // Check if auth service is provided and authentication is required
+        // Only check auth if auth service is explicitly provided
         if (authService && req.body.accountNFT?.nftID && req.body.walletAddress) {
           const isAuthenticated = await authService.checkAuthStatus(req.body.walletAddress, req.body.accountNFT.nftID);
 
@@ -249,85 +249,75 @@ export const initAIAccessPoint = async (
       );
     }
 
-    // Add auth-link endpoint
-    app.post("/auth-link", parseAuth, async (req: Request, res: Response, next: NextFunction) => {
-      await protect(req, res, next, skyNodeParam, pool);
-    },
-      async (req: Request, res: Response, next: NextFunction) =>
-        await checkBalance(req, res, next, contractAddress, skyNodeParam),
-      async (req: Request, res: Response, next: NextFunction) => {
-        try {
-          const userAddress = req.body.walletAddress;
-          const nftId = req.body.accountNFT.nftID;
+    // Add auth-link endpoint only if auth service is configured
+    if (authService) {
+      app.post("/auth-link", parseAuth, async (req: Request, res: Response, next: NextFunction) => {
+        await protect(req, res, next, skyNodeParam, pool);
+      },
+        async (req: Request, res: Response, next: NextFunction) =>
+          await checkBalance(req, res, next, contractAddress, skyNodeParam),
+        async (req: Request, res: Response, next: NextFunction) => {
+          try {
+            const userAddress = req.body.walletAddress;
+            const nftId = req.body.accountNFT.nftID;
 
-          if (!userAddress || !nftId) {
-            return res.status(400).json({
+            if (!userAddress || !nftId) {
+              return res.status(400).json({
+                success: false,
+                error: "userAddress and nftId are required"
+              });
+            }
+
+            const authLink = await authService!.generateAuthLink(userAddress, nftId);
+
+            res.json({
+              success: true,
+              data: { link: authLink }
+            });
+          } catch (error: any) {
+            console.error("❌ Error in auth-link handler:", error);
+            res.status(500).json({
               success: false,
-              error: "userAddress and nftId are required"
+              error: error.message || "Internal server error"
             });
           }
+        });
+    }
 
-          if (!authService) {
-            return res.status(500).json({
+    // Add auth-status endpoint only if auth service is configured
+    if (authService) {
+      app.post("/auth-status", parseAuth, async (req: Request, res: Response, next: NextFunction) => {
+        await protect(req, res, next, skyNodeParam, pool);
+      },
+        async (req: Request, res: Response, next: NextFunction) =>
+          await checkBalance(req, res, next, contractAddress, skyNodeParam),
+        async (req: Request, res: Response, next: NextFunction) => {
+          try {
+            const userAddress = req.body.userAuthPayload?.userAddress;
+            const nftId = req.body.accountNFT?.nftID;
+
+            if (!userAddress || !nftId) {
+              return res.status(400).json({
+                success: false,
+                error: "userAddress and nftId are required"
+              });
+            }
+
+            const isAuthenticated = await authService!.checkAuthStatus(userAddress, nftId);
+
+            res.json({
+              success: true,
+              data: isAuthenticated
+            });
+          } catch (error: any) {
+            console.error("❌ Error in auth-status handler:", error);
+            res.status(500).json({
               success: false,
-              error: "Auth service not configured"
+              error: error.message || "Internal server error"
             });
           }
-
-          const authLink = await authService.generateAuthLink(userAddress, nftId);
-
-          res.json({
-            success: true,
-            data: { link: authLink }
-          });
-        } catch (error: any) {
-          console.error("❌ Error in auth-link handler:", error);
-          res.status(500).json({
-            success: false,
-            error: error.message || "Internal server error"
-          });
-        }
-      });
-
-    // Add auth-status endpoint
-    app.post("/auth-status", parseAuth, async (req: Request, res: Response, next: NextFunction) => {
-      await protect(req, res, next, skyNodeParam, pool);
-    },
-      async (req: Request, res: Response, next: NextFunction) =>
-        await checkBalance(req, res, next, contractAddress, skyNodeParam),
-      async (req: Request, res: Response, next: NextFunction) => {
-        try {
-          const userAddress = req.body.userAuthPayload?.userAddress;
-          const nftId = req.body.accountNFT?.nftID;
-
-          if (!userAddress || !nftId) {
-            return res.status(400).json({
-              success: false,
-              error: "userAddress and nftId are required"
-            });
-          }
-
-          if (!authService) {
-            return res.status(500).json({
-              success: false,
-              error: "Auth service not configured"
-            });
-          }
-
-          const isAuthenticated = await authService.checkAuthStatus(userAddress, nftId);
-
-          res.json({
-            success: true,
-            data: isAuthenticated
-          });
-        } catch (error: any) {
-          console.error("❌ Error in auth-status handler:", error);
-          res.status(500).json({
-            success: false,
-            error: error.message || "Internal server error"
-          });
-        }
-      });
+        });
+    }
 
     // Add API key generation endpoint using masterValidation
     app.post("/generate-api-key",
@@ -408,45 +398,40 @@ export const initAIAccessPoint = async (
         }
       });
 
-    // Add auth revocation endpoint
-    app.post("/revoke-auth", parseAuth, async (req: Request, res: Response, next: NextFunction) => {
-      await protect(req, res, next, skyNodeParam, pool);
-    },
-      async (req: Request, res: Response, next: NextFunction) =>
-        await checkBalance(req, res, next, contractAddress, skyNodeParam),
-      async (req: Request, res: Response, next: NextFunction) => {
-        try {
-          const userAddress = req.body.walletAddress;
-          const nftId = req.body.accountNFT.nftID;
+    // Add auth revocation endpoint only if auth service is configured
+    if (authService) {
+      app.post("/revoke-auth", parseAuth, async (req: Request, res: Response, next: NextFunction) => {
+        await protect(req, res, next, skyNodeParam, pool);
+      },
+        async (req: Request, res: Response, next: NextFunction) =>
+          await checkBalance(req, res, next, contractAddress, skyNodeParam),
+        async (req: Request, res: Response, next: NextFunction) => {
+          try {
+            const userAddress = req.body.walletAddress;
+            const nftId = req.body.accountNFT.nftID;
 
-          if (!userAddress || !nftId) {
-            return res.status(400).json({
+            if (!userAddress || !nftId) {
+              return res.status(400).json({
+                success: false,
+                error: "userAddress and nftId are required"
+              });
+            }
+
+            await authService!.revokeAuth(userAddress, nftId);
+
+            res.json({
+              success: true,
+              message: "Auth revoked successfully"
+            });
+          } catch (error: any) {
+            console.error("❌ Error in revoke-auth handler:", error);
+            res.status(500).json({
               success: false,
-              error: "userAddress and nftId are required"
+              error: error.message || "Internal server error"
             });
           }
-
-          if (!authService) {
-            return res.status(500).json({
-              success: false,
-              error: "Auth service not configured"
-            });
-          }
-
-          await authService.revokeAuth(userAddress, nftId);
-
-          res.json({
-            success: true,
-            message: "Auth revoked successfully"
-          });
-        } catch (error: any) {
-          console.error("❌ Error in revoke-auth handler:", error);
-          res.status(500).json({
-            success: false,
-            error: error.message || "Internal server error"
-          });
-        }
-      });
+        });
+    }
 
     // Add global error handling middleware
     app.use((error: any, req: Request, res: Response, next: NextFunction) => {

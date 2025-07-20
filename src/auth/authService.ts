@@ -85,11 +85,12 @@ export abstract class AuthService {
   abstract revokeAuth(userAddress: string, nftId: string): Promise<void>;
 }
 
-// Factory function to create default auth service
+// Factory function to create a basic auth service (for testing/development only)
+// Note: This should not be used in production as it throws errors for required methods
 export function createAuthService(): AuthService {
   return new (class extends AuthService {
     async generateAuthLink(userAddress: string, nftId: string): Promise<string> {
-      throw new Error('generateAuthLink must be implemented by developer');
+      throw new Error('generateAuthLink must be implemented by developer. Please provide a custom AuthService implementation.');
     }
 
     async revokeAuth(userAddress: string, nftId: string): Promise<void> {

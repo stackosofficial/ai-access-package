@@ -174,6 +174,49 @@ Key methods:
 - `setup()`: Initialize the service
 - `update()`: Run periodic balance updates
 
+### Authentication
+
+The package supports optional third-party authentication. When no auth service is configured, authentication is completely skipped.
+
+#### No Authentication (Default)
+
+```typescript
+const balanceRunMain = await initAIAccessPoint(
+  env,
+  skyNode,
+  app,
+  runNaturalFunction,
+  true
+);
+```
+
+#### With Custom Authentication
+
+```typescript
+import { AuthService } from '@decloudlabs/sky-ai-accesspoint';
+
+class MyCustomAuthService extends AuthService {
+  async generateAuthLink(userAddress: string, nftId: string): Promise<string> {
+    // Implement your third-party auth link generation
+    return `https://your-auth-provider.com/auth?user=${userAddress}&nft=${nftId}`;
+  }
+}
+
+const balanceRunMain = await initAIAccessPoint(
+  env,
+  skyNode,
+  app,
+  runNaturalFunction,
+  true,
+  undefined, // upload
+  {
+    authServiceClass: MyCustomAuthService
+  }
+);
+```
+
+For more details, see [AUTH_USAGE.md](./AUTH_USAGE.md).
+
 ### Security
 
 The package includes built-in middleware for:
