@@ -185,6 +185,33 @@ export const initAIAccessPoint = async (
     // Handler function that wraps runNaturalFunction with ResponseHandler
     const handleRequest = async (req: Request, res: Response, next: NextFunction) => {
       try {
+        // Check if auth service is provided and authentication is required
+        if (authService && req.body.accountNFT?.nftID && req.body.walletAddress) {
+          const isAuthenticated = await authService.checkAuthStatus(req.body.walletAddress, req.body.accountNFT.nftID);
+
+          if (!isAuthenticated) {
+            // Generate auth link and send it back instead of proceeding
+            try {
+              const authLink = await authService.generateAuthLink(req.body.walletAddress, req.body.accountNFT.nftID);
+              return res.status(200).json({
+                success: true,
+                message: "Authentication required, please authenticate using this link: " + authLink,
+                data: {
+                  authLink: authLink,
+                  message: "Please authenticate using the provided link",
+                  isAuthenticated: false
+                }
+              });
+            } catch (authError: any) {
+              console.error("❌ Error generating auth link:", authError);
+              return res.status(500).json({
+                success: false,
+                error: "Failed to generate authentication link"
+              });
+            }
+          }
+        }
+
         const responseHandler = new ResponseHandlerImpl(req, res);
         await runNaturalFunction(req, res, balanceRunMain, responseHandler);
       } catch (error: any) {
@@ -269,38 +296,38 @@ export const initAIAccessPoint = async (
       async (req: Request, res: Response, next: NextFunction) =>
         await checkBalance(req, res, next, contractAddress, skyNodeParam),
       async (req: Request, res: Response, next: NextFunction) => {
-      try {
-        const userAddress = req.body.userAuthPayload?.userAddress;
-        const nftId = req.body.accountNFT?.nftID;
+        try {
+          const userAddress = req.body.userAuthPayload?.userAddress;
+          const nftId = req.body.accountNFT?.nftID;
 
-        if (!userAddress || !nftId) {
-          return res.status(400).json({
+          if (!userAddress || !nftId) {
+            return res.status(400).json({
+              success: false,
+              error: "userAddress and nftId are required"
+            });
+          }
+
+          if (!authService) {
+            return res.status(500).json({
+              success: false,
+              error: "Auth service not configured"
+            });
+          }
+
+          const isAuthenticated = await authService.checkAuthStatus(userAddress, nftId);
+
+          res.json({
+            success: true,
+            data: isAuthenticated
+          });
+        } catch (error: any) {
+          console.error("❌ Error in auth-status handler:", error);
+          res.status(500).json({
             success: false,
-            error: "userAddress and nftId are required"
+            error: error.message || "Internal server error"
           });
         }
-
-        if (!authService) {
-          return res.status(500).json({
-            success: false,
-            error: "Auth service not configured"
-          });
-        }
-
-        const isAuthenticated = await authService.checkAuthStatus(userAddress, nftId);
-
-        res.json({
-          success: true,
-          data: isAuthenticated
-        });
-      } catch (error: any) {
-        console.error("❌ Error in auth-status handler:", error);
-        res.status(500).json({
-          success: false,
-          error: error.message || "Internal server error"
-        });
-      }
-    });
+      });
 
     // Add API key generation endpoint using masterValidation
     app.post("/generate-api-key",
@@ -341,45 +368,45 @@ export const initAIAccessPoint = async (
       async (req: Request, res: Response, next: NextFunction) =>
         await checkBalance(req, res, next, contractAddress, skyNodeParam),
       async (req: Request, res: Response, next: NextFunction) => {
-      try {
-        const walletAddress = req.body.walletAddress;
-        const { apiKey } = req.body;
+        try {
+          const walletAddress = req.body.walletAddress;
+          const { apiKey } = req.body;
 
-        if (!walletAddress) {
-          return res.status(400).json({
+          if (!walletAddress) {
+            return res.status(400).json({
+              success: false,
+              error: "Wallet address not available from authentication"
+            });
+          }
+
+          if (!apiKey) {
+            return res.status(400).json({
+              success: false,
+              error: "apiKey is required"
+            });
+          }
+
+          const result = await revokeApiKey(walletAddress, apiKey, pool);
+
+          if (result.error) {
+            return res.status(400).json({
+              success: false,
+              error: result.error
+            });
+          }
+
+          res.json({
+            success: true,
+            message: "API key revoked successfully"
+          });
+        } catch (error: any) {
+          console.error("❌ Error in revoke-api-key handler:", error);
+          res.status(500).json({
             success: false,
-            error: "Wallet address not available from authentication"
+            error: error.message || "Internal server error"
           });
         }
-
-        if (!apiKey) {
-          return res.status(400).json({
-            success: false,
-            error: "apiKey is required"
-          });
-        }
-
-        const result = await revokeApiKey(walletAddress, apiKey, pool);
-
-        if (result.error) {
-          return res.status(400).json({
-            success: false,
-            error: result.error
-          });
-        }
-
-        res.json({
-          success: true,
-          message: "API key revoked successfully"
-        });
-      } catch (error: any) {
-        console.error("❌ Error in revoke-api-key handler:", error);
-        res.status(500).json({
-          success: false,
-          error: error.message || "Internal server error"
-        });
-      }
-    });
+      });
 
     // Add auth revocation endpoint
     app.post("/revoke-auth", parseAuth, async (req: Request, res: Response, next: NextFunction) => {
