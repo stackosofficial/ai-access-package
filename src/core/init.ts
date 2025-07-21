@@ -103,11 +103,24 @@ export class ResponseHandlerImpl implements ResponseHandler {
   }
 }
 
+// Enhanced BalanceRunMain type that includes automatic system prompt handling
+export interface EnhancedBalanceRunMain extends BalanceRunMain {
+  callAIModel: (
+    prompt: string,
+    accountNFT: any,
+    system_prompt?: string,
+    model?: string[],
+    temperature?: number,
+    response_type?: string,
+    response_schema?: any
+  ) => Promise<any>;
+}
+
 // Define the type for the runNaturalFunction parameter to make it explicit
 export type RunNaturalFunctionType = (
   req: Request,
   res: Response,
-  balanceRunMain: BalanceRunMain,
+  balanceRunMain: EnhancedBalanceRunMain,
   responseHandler: ResponseHandler
 ) => Promise<void>;
 
@@ -212,8 +225,52 @@ export const initAIAccessPoint = async (
           }
         }
 
+        // Extract systemPrompt from request payload if present
+        const userSystemPrompt = req.body.systemPrompt || req.body.system_prompt;
+        console.log('🔍 Extracted user system prompt:', userSystemPrompt);
+        
+        // Create a wrapper for balanceRunMain.callAIModel that automatically includes user's system prompt
+        const enhancedBalanceRunMain: EnhancedBalanceRunMain = {
+          ...balanceRunMain,
+          callAIModel: async (
+            prompt: string,
+            accountNFT: any,
+            system_prompt?: string,
+            model?: string[],
+            temperature?: number,
+            response_type?: string,
+            response_schema?: any
+          ) => {
+            // Get the current user system prompt from the request (in case it changed)
+            const currentUserSystemPrompt = req.body.systemPrompt || req.body.system_prompt;
+            
+            console.log('🔍 Original system prompt:', system_prompt);
+            console.log('🔍 User system prompt:', currentUserSystemPrompt);
+            
+            // Combine user's system prompt with any existing system prompt
+            let combinedSystemPrompt = system_prompt || '';
+            if (currentUserSystemPrompt) {
+              combinedSystemPrompt = combinedSystemPrompt 
+                ? `${combinedSystemPrompt}\n\n${currentUserSystemPrompt}`
+                : currentUserSystemPrompt;
+            }
+            
+            console.log('🔍 Combined system prompt:', combinedSystemPrompt);
+            
+            return balanceRunMain.callAIModel(
+              prompt,
+              accountNFT,
+              combinedSystemPrompt,
+              model,
+              temperature,
+              response_type,
+              response_schema
+            );
+          }
+        };
+
         const responseHandler = new ResponseHandlerImpl(req, res);
-        await runNaturalFunction(req, res, balanceRunMain, responseHandler);
+        await runNaturalFunction(req, res, enhancedBalanceRunMain, responseHandler);
       } catch (error: any) {
         console.error("❌ Error in request handler:", error);
         if (!res.headersSent) {
