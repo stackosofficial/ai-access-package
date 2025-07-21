@@ -24,6 +24,7 @@ export const protect = async (req: Request, res: Response, next: NextFunction, s
 
     const newBody = {
       prompt: req.body.prompt,
+      systemPrompt: req.body.systemPrompt || req.body.system_prompt || req.body['systemPrompt'] || req.body['system_prompt'],
       agentCollection: validationResult.agentCollection,
       accountNFT: validationResult.accountNFT,
       walletAddress: validationResult.walletAddress,

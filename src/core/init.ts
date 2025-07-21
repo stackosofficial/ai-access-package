@@ -225,8 +225,8 @@ export const initAIAccessPoint = async (
           }
         }
 
-        // Extract systemPrompt from request payload if present
-        const userSystemPrompt = req.body.systemPrompt || req.body.system_prompt;
+        // Extract systemPrompt from request payload if present (handles both JSON and form data)
+        const userSystemPrompt = req.body.systemPrompt || req.body.system_prompt || req.body['systemPrompt'] || req.body['system_prompt'];
         
         // Create a wrapper for balanceRunMain.callAIModel that automatically includes user's system prompt
         const enhancedBalanceRunMain: EnhancedBalanceRunMain = {
@@ -240,8 +240,8 @@ export const initAIAccessPoint = async (
             response_type?: string,
             response_schema?: any
           ) => {
-            // Get the current user system prompt from the request (in case it changed)
-            const currentUserSystemPrompt = req.body.systemPrompt || req.body.system_prompt;
+            // Get the current user system prompt from the request (in case it changed) - handles both JSON and form data
+            const currentUserSystemPrompt = req.body.systemPrompt || req.body.system_prompt || req.body['systemPrompt'] || req.body['system_prompt'];
             
             // Combine user's system prompt with any existing system prompt
             let combinedSystemPrompt = system_prompt || '';
