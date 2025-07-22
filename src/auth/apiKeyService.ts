@@ -216,11 +216,11 @@ export const masterValidation = async (req: any, skyNode: SkyMainNodeJS, pool: P
           error: 'Wallet address not available for agent collection validation'
         };
       }
-
+      
       // Validate agent collection ownership
-      const { agentAddress: agentCollectionAddress, agentID } = req.body.agentCollection;
+      const { agentAddress, agentID } = req.body.agentCollection;
 
-      if (!agentCollectionAddress) {
+      if (!agentAddress) {
         return {
           isValid: false,
           error: 'Agent collection address not provided'
@@ -228,7 +228,7 @@ export const masterValidation = async (req: any, skyNode: SkyMainNodeJS, pool: P
       }
 
       const isAgentCollectionOwner = await validateAgentCollection(
-        agentCollectionAddress,
+        agentAddress,
         agentID || null,
         walletAddress,
         skyNode

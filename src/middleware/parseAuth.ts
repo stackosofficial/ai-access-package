@@ -18,6 +18,7 @@ export const parseAuth = async (req: Request, res: Response, next: NextFunction)
     // Handle both JSON strings and objects for userAuthPayload and accountNFT
     const userAuthPayloadRaw = req.body.userAuthPayload;
     const accountNFTRaw = req.body.accountNFT;
+    const agentCollectionRaw = req.body.agentCollection;
 
     // If no auth data provided and no API key, let masterValidation handle the error
     if (!userAuthPayloadRaw && !accountNFTRaw && !apiKey) {
@@ -72,6 +73,31 @@ export const parseAuth = async (req: Request, res: Response, next: NextFunction)
       }
 
       req.body.accountNFT = accountNFT;
+    }
+
+     // Parse agentCollection if provided
+     if (agentCollectionRaw) {
+      let agentCollection;
+      
+      if (typeof agentCollectionRaw === 'string') {
+        try {
+          agentCollection = JSON.parse(agentCollectionRaw);
+        } catch {
+          return res.status(400).json({
+            success: false,
+            data: "Invalid JSON format in accountNFT",
+          });
+        }
+      } else if (typeof accountNFTRaw === 'object') {
+        agentCollection = agentCollectionRaw;
+      } else {
+        return res.status(400).json({
+          success: false,
+          data: "accountNFT must be a JSON object or string",
+        });
+      }
+
+      req.body.agentCollection = agentCollection;
     }
 
     next();
