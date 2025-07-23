@@ -1,7 +1,7 @@
 ---
 alwaysApply: false
 ---
-# ai-access-point SDK Rules (Updated v0.2.0)
+# ai-access-point SDK Rules (Updated v0.3.4)
 
 ## 1. No Socket.IO or WebSocket Support
 - All Socket.IO and WebSocket code, tests, and documentation are deprecated and must not be used.
@@ -28,6 +28,7 @@ The only required methods for a custom AuthService are:
 - **NO direct database URL or pool passing** in constructors
 - Use the global PostgreSQL URL set during SDK initialization
 - The SDK automatically provides the database pool to the auth service internally
+- **Pass class, not instance** - Pass the auth service class to `initAIAccessPoint`, not an instance
 
 ### **Example AuthService Implementation**
 ```typescript
@@ -176,7 +177,7 @@ if (authService) {
 const runNaturalFunction = async (
   req: Request,
   res: Response,
-  balanceRunMain: BalanceRunMain,
+  balanceRunMain: EnhancedBalanceRunMain,
   responseHandler: ResponseHandler
 ): Promise<void> => {
   try {
@@ -203,10 +204,33 @@ const runNaturalFunction = async (
       console.log('User authenticated:', authData?.emailAddress);
     }
 
-    // Process authenticated request...
+    // Process authenticated request using access point's accountNFT
     responseHandler.sendUpdate("Processing authenticated request...");
     
-    const processedResult = `Processed: ${prompt}`;
+    // Use access point's accountNFT for AI model calls, not user's accountNFT
+    const accessPointAccountNFT = {
+      collectionID: process.env.ACCESS_POINT_COLLECTION_ID || "0",
+      nftID: process.env.ACCESS_POINT_NFT_ID || "1"
+    };
+    
+    const completion = await balanceRunMain.callAIModel(
+      prompt,
+      accessPointAccountNFT, // Use access point's accountNFT
+      undefined, // system_prompt (optional)
+      ["gpt-4"], // model (optional)
+      0.7, // temperature (optional)
+      "json", // response_type for structured JSON
+      { // response_schema for proper JSON structure
+        type: "object",
+        properties: {
+          action: { type: "string" },
+          service: { type: "string" },
+          result: { type: "string" }
+        }
+      }
+    );
+    
+    const processedResult = completion.success ? completion.message : `Processed: ${prompt}`;
     const cost = BigInt(0.01 * 1e12);
     
     responseHandler.sendFinalResponse({
@@ -850,7 +874,7 @@ testNaturalRequests();
 {
   "dependencies": {
     "@decloudlabs/skynet": "0.6.25",
-    "@decloudlabs/sky-ai-accesspoint": "0.2.5",
+    "@decloudlabs/sky-ai-accesspoint": "0.3.4",
     "@ethersproject/wallet": "^5.7.0",
     "@supabase/supabase-js": "^2.39.0",
     "axios": "^1.9.0",
@@ -970,16 +994,22 @@ const runNaturalFunction = async (
     }
 
     // Step 1: Use AI to parse and extract parameters from user request
-    const completion = await balanceRunMain.callAIModel(`[
+    const completion = await balanceRunMain.callAIModel(
+      prompt,
+      accountNFT,
+      "You are a helpful assistant that extracts parameters from user requests. Return only valid JSON with the required fields.",
+      ["gpt-4"],
+      0.7,
+      "json_schema",
       {
-        "role": "system",
-        "content": "You are a helpful assistant that extracts parameters from user requests. Return only valid JSON with the required fields."
-      },
-      {
-        "role": "user",
-        "content": "${prompt}"
+        type: "object",
+        properties: {
+          action: { type: "string" },
+          domain: { type: "string" },
+          keyword: { type: "string" }
+        }
       }
-    ]`);
+    );
 
     if (!completion.success) {
       responseHandler.sendError(completion.message, 500);
@@ -1117,16 +1147,22 @@ const runNaturalFunction = async (
     responseHandler.sendUpdate("Processing your request...");
 
     // Step 1: Use AI to parse and extract parameters from user request
-    const completion = await balanceRunMain.callAIModel(`[
+    const completion = await balanceRunMain.callAIModel(
+      prompt,
+      accountNFT,
+      "You are a helpful assistant that extracts parameters from user requests. Return only valid JSON with the required fields.",
+      ["gpt-4"],
+      0.7,
+      "json_schema",
       {
-        "role": "system",
-        "content": "You are a helpful assistant that extracts parameters from user requests. Return only valid JSON with the required fields."
-      },
-      {
-        "role": "user",
-        "content": "${prompt}"
+        type: "object",
+        properties: {
+          action: { type: "string" },
+          domain: { type: "string" },
+          keyword: { type: "string" }
+        }
       }
-    ]`);
+    );
 
     if (!completion.success) {
       responseHandler.sendError(completion.message, 500);
@@ -1367,7 +1403,6 @@ import { GmailAuthService } from "./services/GmailAuthService";
 import authRoutes from "./routes/authRoutes";
 import cors from "cors";
 import bodyParser from "body-parser";
-import { Pool } from "pg";
 import BalanceRunMain from '@decloudlabs/sky-ai-accesspoint/lib/balanceRunMain';
 import { ResponseHandler } from '@decloudlabs/sky-ai-accesspoint/lib/types/types';
 
@@ -1409,7 +1444,30 @@ const runNaturalFunction = async (
 
     responseHandler.sendUpdate("Processing authenticated request...");
     
-    const processedResult = `Processed: ${prompt}`;
+    // Use access point's accountNFT for AI model calls
+    const accessPointAccountNFT = {
+      collectionID: process.env.ACCESS_POINT_COLLECTION_ID || "0",
+      nftID: process.env.ACCESS_POINT_NFT_ID || "1"
+    };
+    
+    const completion = await balanceRunMain.callAIModel(
+      prompt,
+      accessPointAccountNFT, // Use access point's accountNFT
+      undefined, // system_prompt (optional)
+      ["gpt-4"], // model (optional)
+      0.7, // temperature (optional)
+      "json_schema", // response_type for structured JSON
+      { // response_schema for proper JSON structure
+        type: "object",
+        properties: {
+          action: { type: "string" },
+          service: { type: "string" },
+          result: { type: "string" }
+        }
+      }
+    );
+    
+    const processedResult = completion.success ? completion.message : `Processed: ${prompt}`;
     const cost = BigInt(0.01 * 1e12);
     
     responseHandler.sendFinalResponse({
@@ -1435,10 +1493,6 @@ const setup = async () => {
     SERVER_COST_CONTRACT_ADDRESS: process.env.SERVER_COST_CONTRACT_ADDRESS!,
   };
 
-  // Create custom auth service
-  const pool = new Pool({ connectionString: env.POSTGRES_URL });
-  const gmailAuthService = new GmailAuthService(pool);
-
   const balanceRunMain = await initAIAccessPoint(
     env,
     skyNode,
@@ -1446,7 +1500,7 @@ const setup = async () => {
     runNaturalFunction,
     true,
     undefined,
-    { authService: gmailAuthService }
+    { authServiceClass: GmailAuthService } // Pass class, not instance
   );
 
   if (!balanceRunMain.success) {
@@ -2858,7 +2912,132 @@ npm run build
 
 **Remember:** This comprehensive test ensures your AI Access Point is fully functional and ready for real-world use!
 
-## 19. REST API Endpoint Rules: Use Only SDK-Provided Endpoints
+## 19. Enhanced callAIModel with Custom Models and JSON Response Support
+
+### **callAIModel Parameters**
+The `callAIModel` function supports advanced parameters for custom models and structured JSON responses:
+
+```typescript
+const completion = await balanceRunMain.callAIModel(
+  prompt: string,
+  accountNFT: { collectionID: string; nftID: string },
+  system_prompt?: string,        // Optional system prompt
+  model?: string[],              // Custom model array (e.g., ["gpt-4", "claude-3"])
+  temperature?: number,          // Temperature (0.0 to 1.0)
+  response_type?: string,        // "json" for structured responses
+  response_schema?: object       // JSON schema for response structure
+);
+```
+
+### **Using Access Point's AccountNFT**
+Always use the access point's accountNFT for AI model calls, not the user's accountNFT:
+
+```typescript
+// ✅ CORRECT: Use access point's accountNFT
+const accessPointAccountNFT = {
+  collectionID: process.env.ACCESS_POINT_COLLECTION_ID || "0",
+  nftID: process.env.ACCESS_POINT_NFT_ID || "1"
+};
+
+    const completion = await balanceRunMain.callAIModel(
+      prompt,
+      accessPointAccountNFT, // Access point's accountNFT
+      undefined, // system_prompt
+      ["gpt-4"], // model
+      0.7, // temperature
+      "json_schema", // response_type
+      { // response_schema
+        type: "object",
+        properties: {
+          action: { type: "string" },
+          service: { type: "string" },
+          result: { type: "string" }
+        }
+      }
+    );
+```
+
+### **JSON Response with Schema**
+For structured responses, use `response_type: "json"` with a schema:
+
+```typescript
+const completion = await balanceRunMain.callAIModel(
+  "Analyze the domain example.com",
+  accessPointAccountNFT,
+  "You are a domain analysis expert",
+  ["gpt-4"],
+  0.3,
+  "json",
+  {
+    type: "object",
+    properties: {
+      domain: { type: "string" },
+      analysis: { type: "string" },
+      recommendations: { 
+        type: "array", 
+        items: { type: "string" } 
+      },
+      score: { type: "number" }
+    },
+    required: ["domain", "analysis", "score"]
+  }
+);
+```
+
+## 20. Data Storage Service
+
+### **Internal Storage Function**
+Access points can store data using the internal function:
+
+```typescript
+import { getDataStorageService } from 'ai-access-package';
+
+const dataStorageService = getDataStorageService();
+await dataStorageService?.storeData(
+  'service-name',
+  'collection-id', 
+  'nft-id',
+  'reference-id',
+  { data: 'to store' }
+);
+```
+
+### **Fetch Data Endpoint**
+Use the API endpoint to retrieve stored data:
+
+```bash
+GET /fetch-data/:referenceId
+```
+
+Response:
+```json
+{
+  "success": true,
+  "data": {
+    "serviceName": "string",
+    "data": "any",
+    "createdAt": "date",
+    "updatedAt": "date"
+  }
+}
+```
+
+### **Custom Validation**
+Add custom validation during initialization:
+
+```typescript
+const customValidation = async (data, accountNFT, serviceName, referenceId) => {
+  // Your validation logic
+  return { isValid: true, transformedData: data };
+};
+
+const result = await initAIAccessPoint(
+  env, skyNode, app, runNaturalFunction, true, upload,
+  { dataStorageValidationFunction: customValidation }
+);
+```
+
+## 21. REST API Endpoint Rules: Use Only SDK-Provided Endpoints
 
 ### **MANDATORY: Use Only SDK-Provided Endpoints**
 Your AI Access Point **MUST** use only the REST API endpoints provided by the SDK. Do not create custom endpoints for different types of requests.
@@ -2928,16 +3107,22 @@ const runNaturalFunction = async (
     responseHandler.sendUpdate("Analyzing your request...");
 
     // Step 1: Use AI to parse the prompt and determine required service
-    const completion = await balanceRunMain.callAIModel(`[
+    const completion = await balanceRunMain.callAIModel(
+      prompt,
+      accountNFT,
+      "You are an AI assistant that analyzes user requests and determines which service is needed. Return only valid JSON with the required fields.",
+      ["gpt-4"],
+      0.7,
+      "json_schema",
       {
-        "role": "system",
-        "content": "You are an AI assistant that analyzes user requests and determines which service is needed. Return only valid JSON with the required fields."
-      },
-      {
-        "role": "user",
-        "content": "${prompt}"
+        type: "object",
+        properties: {
+          service: { type: "string" },
+          action: { type: "string" },
+          requiresAuth: { type: "boolean" }
+        }
       }
-    ]`);
+    );
 
     if (!completion.success) {
       responseHandler.sendError(completion.message, 500);

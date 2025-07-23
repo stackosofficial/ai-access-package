@@ -9,6 +9,7 @@ import { generateApiKey, revokeApiKey } from "../auth/apiKeyService";
 import { AuthService, createAuthService } from "../auth/authService";
 import { DatabaseMigration } from "../database/databaseMigration";
 import { getAllTableSchemas } from "../database/tableSchemas";
+import { DataStorageService } from "../services/dataStorage/dataStorageService";
 import express, { Request, Response, NextFunction } from "express";
 import multer from "multer";
 import { Pool } from "pg";
@@ -16,6 +17,7 @@ import { Pool } from "pg";
 let skyNode: SkyMainNodeJS;
 let authService: AuthService | null = null;
 let globalPostgresUrl: string | null = null;
+let dataStorageService: DataStorageService | null = null;
 
 export const setupSkyNode = async (skyNodeParam: SkyMainNodeJS) => {
   skyNode = skyNodeParam;
@@ -128,6 +130,12 @@ export type RunNaturalFunctionType = (
 export interface AIAccessPointConfig {
   apiKeyConfig?: ApiKeyConfig;
   authServiceClass?: new () => AuthService;  // Changed: accept class instead of instance
+  dataStorageValidationFunction?: (
+    data: any,
+    accountNFT: { collectionID: string; nftID: string },
+    serviceName: string,
+    referenceId: string
+  ) => Promise<{ isValid: boolean; error?: string; transformedData?: any }>;
 }
 
 export const initAIAccessPoint = async (
@@ -188,6 +196,15 @@ export const initAIAccessPoint = async (
       // Don't create default auth service - keep it null
       authService = null;
       console.log("ℹ️ No auth service configured - authentication will be skipped");
+    }
+
+    // Initialize data storage service
+    dataStorageService = new DataStorageService(pool);
+    if (config?.dataStorageValidationFunction) {
+      dataStorageService.setValidationFunction(config.dataStorageValidationFunction);
+      console.log("✅ Data storage service initialized with custom validation function");
+    } else {
+      console.log("✅ Data storage service initialized without custom validation");
     }
 
     // Initialize all database tables using centralized migration
@@ -484,6 +501,55 @@ export const initAIAccessPoint = async (
         });
     }
 
+
+
+    // Fetch data endpoint
+    app.get("/fetch-data/:referenceId", parseAuth, async (req: Request, res: Response, next: NextFunction) => {
+      await protect(req, res, next, skyNodeParam, pool);
+    },
+      async (req: Request, res: Response, next: NextFunction) =>
+        await checkBalance(req, res, next, contractAddress, skyNodeParam),
+      async (req: Request, res: Response, next: NextFunction) => {
+        try {
+          const { referenceId } = req.params;
+          const collectionId = req.body.accountNFT.collectionID;
+          const nftId = req.body.accountNFT.nftID;
+
+          if (!referenceId) {
+            return res.status(400).json({
+              success: false,
+              error: "referenceId is required"
+            });
+          }
+
+          const result = await dataStorageService!.fetchData(
+            collectionId,
+            nftId,
+            referenceId
+          );
+
+          if (!result.success) {
+            return res.status(404).json({
+              success: false,
+              error: result.error
+            });
+          }
+
+          res.json({
+            success: true,
+            data: result.data
+          });
+        } catch (error: any) {
+          console.error("❌ Error in fetch-data handler:", error);
+          res.status(500).json({
+            success: false,
+            error: error.message || "Internal server error"
+          });
+        }
+      });
+
+
+
     // Add global error handling middleware
     app.use((error: any, req: Request, res: Response, next: NextFunction) => {
       console.error("❌ [GLOBAL ERROR HANDLER] Unhandled error:", error);
@@ -525,4 +591,24 @@ export const getAuthService = () => authService;
 export const setAuthService = (newAuthService: AuthService) => {
   authService = newAuthService;
   console.log("✅ Auth service updated successfully");
+};
+
+// Export data storage service for developer use
+export const getDataStorageService = () => dataStorageService;
+
+// Function to set data storage validation function after initialization
+export const setDataStorageValidationFunction = (
+  validationFunction: (
+    data: any,
+    accountNFT: { collectionID: string; nftID: string },
+    serviceName: string,
+    referenceId: string
+  ) => Promise<{ isValid: boolean; error?: string; transformedData?: any }>
+) => {
+  if (dataStorageService) {
+    dataStorageService.setValidationFunction(validationFunction);
+    console.log("✅ Data storage validation function updated successfully");
+  } else {
+    console.error("❌ Data storage service not initialized");
+  }
 };

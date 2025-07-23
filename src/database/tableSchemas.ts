@@ -4,6 +4,7 @@ export interface AppTableSchemas {
   balanceTables: TableSchema[];
   apiKeyTables: TableSchema[];
   authTables: TableSchema[];
+  dataStorageTables: TableSchema[];
 }
 
 export function getBalanceTableSchemas(subnetId: string): TableSchema[] {
@@ -179,11 +180,52 @@ export function getAuthTableSchemas(): TableSchema[] {
   ];
 }
 
+export function getDataStorageTableSchemas(): TableSchema[] {
+  return [
+    {
+      tableName: 'data_storage',
+      createTableSQL: `
+        CREATE TABLE IF NOT EXISTS data_storage (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          service_name TEXT NOT NULL,
+          collection_id TEXT NOT NULL,
+          nft_id TEXT NOT NULL,
+          reference_id TEXT NOT NULL,
+          data JSONB NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(service_name, collection_id, nft_id, reference_id)
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_data_storage_service_nft 
+        ON data_storage(service_name, collection_id, nft_id);
+        
+        CREATE INDEX IF NOT EXISTS idx_data_storage_reference 
+        ON data_storage(reference_id);
+        
+        CREATE INDEX IF NOT EXISTS idx_data_storage_nft_reference 
+        ON data_storage(collection_id, nft_id, reference_id);
+      `,
+      requiredColumns: [
+        { name: 'id', type: 'UUID', nullable: false, defaultValue: 'gen_random_uuid()' },
+        { name: 'service_name', type: 'TEXT', nullable: false },
+        { name: 'collection_id', type: 'TEXT', nullable: false },
+        { name: 'nft_id', type: 'TEXT', nullable: false },
+        { name: 'reference_id', type: 'TEXT', nullable: false },
+        { name: 'data', type: 'JSONB', nullable: false },
+        { name: 'created_at', type: 'TIMESTAMPTZ', nullable: false, defaultValue: 'CURRENT_TIMESTAMP' },
+        { name: 'updated_at', type: 'TIMESTAMPTZ', nullable: false, defaultValue: 'CURRENT_TIMESTAMP' }
+      ]
+    }
+  ];
+}
+
 export function getAllTableSchemas(subnetId: string): TableSchema[] {
   return [
     ...getBalanceTableSchemas(subnetId),
     ...getApiKeyTableSchemas(),
-    ...getAuthTableSchemas()
+    ...getAuthTableSchemas(),
+    ...getDataStorageTableSchemas()
   ];
 }
 
@@ -191,6 +233,7 @@ export function getAppTableSchemas(subnetId: string): AppTableSchemas {
   return {
     balanceTables: getBalanceTableSchemas(subnetId),
     apiKeyTables: getApiKeyTableSchemas(),
-    authTables: getAuthTableSchemas()
+    authTables: getAuthTableSchemas(),
+    dataStorageTables: getDataStorageTableSchemas()
   };
 } 
