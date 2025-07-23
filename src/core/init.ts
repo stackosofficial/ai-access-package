@@ -504,21 +504,21 @@ export const initAIAccessPoint = async (
 
 
     // Fetch data endpoint
-    app.get("/fetch-data/:referenceId", parseAuth, async (req: Request, res: Response, next: NextFunction) => {
+    app.post("/fetch-data", parseAuth, async (req: Request, res: Response, next: NextFunction) => {
       await protect(req, res, next, skyNodeParam, pool);
     },
       async (req: Request, res: Response, next: NextFunction) =>
         await checkBalance(req, res, next, contractAddress, skyNodeParam),
       async (req: Request, res: Response, next: NextFunction) => {
         try {
-          const { referenceId } = req.params;
+          const { referenceId } = req.body;
           const collectionId = req.body.accountNFT.collectionID;
           const nftId = req.body.accountNFT.nftID;
 
           if (!referenceId) {
             return res.status(400).json({
               success: false,
-              error: "referenceId is required"
+              error: "referenceId is required in request body"
             });
           }
 
