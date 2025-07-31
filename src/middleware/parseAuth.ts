@@ -20,34 +20,34 @@ export const parseAuth = async (req: Request, res: Response, next: NextFunction)
     const accountNFTRaw = req.body.accountNFT;
     const agentCollectionRaw = req.body.agentCollection;
 
-         // Parse agentCollection if provided
-         if (agentCollectionRaw) {
-          let agentCollection;
-          
-          if (typeof agentCollectionRaw === 'string') {
-            try {
-              agentCollection = JSON.parse(agentCollectionRaw);
-            } catch {
-              return res.status(400).json({
-                success: false,
-                data: "Invalid JSON format in accountNFT",
-              });
-            }
-          } else if (typeof accountNFTRaw === 'object') {
-            agentCollection = agentCollectionRaw;
-          } else {
-            return res.status(400).json({
-              success: false,
-              data: "accountNFT must be a JSON object or string",
-            });
-          }
-    
-          req.body.agentCollection = agentCollection;
+    // Parse agentCollection if provided
+    if (agentCollectionRaw) {
+      let agentCollection;
+
+      if (typeof agentCollectionRaw === 'string') {
+        try {
+          agentCollection = JSON.parse(agentCollectionRaw);
+        } catch {
+          return res.status(400).json({
+            success: false,
+            data: "Invalid JSON format in accountNFT",
+          });
         }
+      } else if (typeof agentCollectionRaw === 'object') {
+        agentCollection = agentCollectionRaw;
+      } else {
+        return res.status(400).json({
+          success: false,
+          data: "agentCollectionRaw must be a JSON object or string",
+        });
+      }
+
+      req.body.agentCollection = agentCollection;
+    }
 
     // If no auth data provided and no API key, let masterValidation handle the error
     if (!userAuthPayloadRaw && !accountNFTRaw) {
-      if(apiKey){
+      if (apiKey) {
         return next();
       }
     }
@@ -55,7 +55,7 @@ export const parseAuth = async (req: Request, res: Response, next: NextFunction)
     // Parse userAuthPayload if provided
     if (userAuthPayloadRaw) {
       let userAuthPayload;
-      
+
       if (typeof userAuthPayloadRaw === 'string') {
         try {
           userAuthPayload = JSON.parse(userAuthPayloadRaw);
@@ -80,7 +80,7 @@ export const parseAuth = async (req: Request, res: Response, next: NextFunction)
     // Parse accountNFT if provided
     if (accountNFTRaw) {
       let accountNFT;
-      
+
       if (typeof accountNFTRaw === 'string') {
         try {
           accountNFT = JSON.parse(accountNFTRaw);
