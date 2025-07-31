@@ -20,9 +20,36 @@ export const parseAuth = async (req: Request, res: Response, next: NextFunction)
     const accountNFTRaw = req.body.accountNFT;
     const agentCollectionRaw = req.body.agentCollection;
 
+         // Parse agentCollection if provided
+         if (agentCollectionRaw) {
+          let agentCollection;
+          
+          if (typeof agentCollectionRaw === 'string') {
+            try {
+              agentCollection = JSON.parse(agentCollectionRaw);
+            } catch {
+              return res.status(400).json({
+                success: false,
+                data: "Invalid JSON format in accountNFT",
+              });
+            }
+          } else if (typeof accountNFTRaw === 'object') {
+            agentCollection = agentCollectionRaw;
+          } else {
+            return res.status(400).json({
+              success: false,
+              data: "accountNFT must be a JSON object or string",
+            });
+          }
+    
+          req.body.agentCollection = agentCollection;
+        }
+
     // If no auth data provided and no API key, let masterValidation handle the error
-    if (!userAuthPayloadRaw && !accountNFTRaw && !apiKey) {
-      return next();
+    if (!userAuthPayloadRaw && !accountNFTRaw) {
+      if(apiKey){
+        return next();
+      }
     }
 
     // Parse userAuthPayload if provided
@@ -75,30 +102,7 @@ export const parseAuth = async (req: Request, res: Response, next: NextFunction)
       req.body.accountNFT = accountNFT;
     }
 
-     // Parse agentCollection if provided
-     if (agentCollectionRaw) {
-      let agentCollection;
-      
-      if (typeof agentCollectionRaw === 'string') {
-        try {
-          agentCollection = JSON.parse(agentCollectionRaw);
-        } catch {
-          return res.status(400).json({
-            success: false,
-            data: "Invalid JSON format in accountNFT",
-          });
-        }
-      } else if (typeof accountNFTRaw === 'object') {
-        agentCollection = agentCollectionRaw;
-      } else {
-        return res.status(400).json({
-          success: false,
-          data: "accountNFT must be a JSON object or string",
-        });
-      }
 
-      req.body.agentCollection = agentCollection;
-    }
 
     next();
   } catch (error: any) {
