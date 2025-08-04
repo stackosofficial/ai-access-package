@@ -242,9 +242,6 @@ export const initAIAccessPoint = async (
           }
         }
 
-        // Extract systemPrompt from request payload if present (handles both JSON and form data)
-        const userSystemPrompt = req.body.systemPrompt || req.body.system_prompt || req.body['systemPrompt'] || req.body['system_prompt'];
-        
         // Create a wrapper for balanceRunMain.callAIModel that automatically includes user's system prompt
         const enhancedBalanceRunMain: EnhancedBalanceRunMain = {
           ...balanceRunMain,
@@ -259,15 +256,15 @@ export const initAIAccessPoint = async (
           ) => {
             // Get the current user system prompt from the request (in case it changed) - handles both JSON and form data
             const currentUserSystemPrompt = req.body.systemPrompt || req.body.system_prompt || req.body['systemPrompt'] || req.body['system_prompt'];
-            
+
             // Combine user's system prompt with any existing system prompt
             let combinedSystemPrompt = system_prompt || '';
             if (currentUserSystemPrompt) {
-              combinedSystemPrompt = combinedSystemPrompt 
+              combinedSystemPrompt = combinedSystemPrompt
                 ? `${combinedSystemPrompt}\n\n${currentUserSystemPrompt}`
                 : currentUserSystemPrompt;
             }
-            
+
             return balanceRunMain.callAIModel(
               prompt,
               accountNFT,
@@ -319,9 +316,10 @@ export const initAIAccessPoint = async (
 
     // Add auth-link endpoint only if auth service is configured
     if (authService) {
-      app.post("/auth-link", parseAuth, async (req: Request, res: Response, next: NextFunction) => {
-        await protect(req, res, next, skyNodeParam, pool);
-      },
+      app.post("/auth-link", parseAuth,
+        async (req: Request, res: Response, next: NextFunction) => {
+          await protect(req, res, next, skyNodeParam, pool);
+        },
         async (req: Request, res: Response, next: NextFunction) =>
           await checkBalance(req, res, next, contractAddress, skyNodeParam),
         async (req: Request, res: Response, next: NextFunction) => {
@@ -354,15 +352,16 @@ export const initAIAccessPoint = async (
 
     // Add auth-status endpoint only if auth service is configured
     if (authService) {
-      app.post("/auth-status", parseAuth, async (req: Request, res: Response, next: NextFunction) => {
-        await protect(req, res, next, skyNodeParam, pool);
-      },
+      app.post("/auth-status", parseAuth,
+        async (req: Request, res: Response, next: NextFunction) => {
+          await protect(req, res, next, skyNodeParam, pool);
+        },
         async (req: Request, res: Response, next: NextFunction) =>
           await checkBalance(req, res, next, contractAddress, skyNodeParam),
         async (req: Request, res: Response, next: NextFunction) => {
           try {
-            const userAddress = req.body.userAuthPayload?.userAddress;
-            const nftId = req.body.accountNFT?.nftID;
+            const userAddress = req.body.walletAddress;
+            const nftId = req.body.accountNFT.nftID;
 
             if (!userAddress || !nftId) {
               return res.status(400).json({

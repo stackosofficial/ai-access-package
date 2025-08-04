@@ -1,6 +1,6 @@
 {
   "name": "@decloudlabs/sky-ai-accesspoint",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "description": "AI Access Point API with improved Supabase compatibility",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -11,7 +11,9 @@
     "start": "node lib/init.js",
     "dev": "nodemon --exec ts-node src/index.ts",
     "build": "tsc",
-    "test:db": "ts-node dbtest.ts"
+    "test:db": "ts-node dbtest.ts",
+    "update-sdk": "ts-node update-sdk-version.ts",
+    "update": "npm run update-sdk && pms build && pms publish"
   },
   "dependencies": {
     "@decloudlabs/skynet": "0.6.25",
