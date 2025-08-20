@@ -3037,7 +3037,175 @@ const result = await initAIAccessPoint(
 );
 ```
 
-## 21. REST API Endpoint Rules: Use Only SDK-Provided Endpoints
+## 21. RabbitMQ Integration for Long-Running Jobs (Optional)
+
+### **Overview**
+RabbitMQ integration is **OPTIONAL** and only required for access points that handle long-running background tasks. This prevents timeout errors for jobs that take longer than typical HTTP request timeouts.
+
+### **When to Use RabbitMQ**
+- ✅ **Use RabbitMQ**: For access points with long-running tasks (deployment, analysis, processing)
+- ❌ **Don't Use RabbitMQ**: For simple, quick AI responses that complete within HTTP timeout limits
+
+### **Environment Variables**
+Add these to your `.env` file only if using RabbitMQ:
+
+```env
+RABBIT_MQ_HOST=your-rabbitmq-server.com
+RABBIT_MQ_AMQP_PORT=5672
+RABBIT_MQ_USER=your-username
+RABBIT_MQ_PASSWORD=your-password
+```
+
+### **Request Format with RabbitMQ**
+Include these additional fields for long-running jobs:
+
+```json
+{
+  "prompt": "Deploy a web app using nginx:latest on port 80",
+  "userAuthPayload": "your-auth-payload",
+  "accountNFT": "your-account-nft",
+  "queueName": "your-queue-name",        // Required for RabbitMQ
+  "referenceID": "unique-reference-id"   // Required for RabbitMQ
+}
+```
+
+### **Response Format**
+
+#### **Immediate Response (to client)**
+```json
+{
+  "message": "Task started in background. Results will be published to queue: your-queue-name",
+  "data": {
+    "queueName": "your-queue-name",
+    "status": "started",
+    "message": "Task process initiated successfully",
+    "referenceID": "unique-reference-id"
+  }
+}
+```
+
+#### **Success Result (published to queue)**
+```json
+{
+  "referenceID": "unique-reference-id",
+  "data": {
+    "result": "task result",
+    "message": "Task completed successfully",
+    "urls": ["https://your-app-url.com"],
+    "balance": "balance-info"
+  }
+}
+```
+
+#### **Error Result (published to queue)**
+```json
+{
+  "referenceID": "unique-reference-id",
+  "data": {
+    "error": "Error message describing what went wrong",
+    "message": "Task failed"
+  }
+}
+```
+
+### **WebSocket Support**
+WebSocket endpoints also support RabbitMQ integration:
+
+```javascript
+// WebSocket request
+socket.emit('natural-request', {
+  prompt: "Deploy a web app using nginx:latest on port 80",
+  userAuthPayload: "your-auth-payload",
+  accountNFT: "your-account-nft",
+  queueName: "your-queue-name",
+  referenceID: "unique-reference-id"
+});
+
+// WebSocket response
+socket.on('natural-response', (response) => {
+  console.log(response);
+  // Response format same as HTTP API
+});
+```
+
+### **Key Benefits**
+1. **No Timeout Issues**: API requests return immediately
+2. **Scalable**: Multiple tasks can run concurrently
+3. **Reliable**: RabbitMQ ensures message delivery
+4. **Flexible**: Results can be consumed by any service
+5. **Standardized**: Consistent message format
+
+### **Flow Summary**
+1. **Request received** with `queueName`, `referenceID`, and task data
+2. **Background task starts** with the provided `referenceID`
+3. **Results published** to RabbitMQ with the same `referenceID`
+4. **Consumer can match** responses to requests using the `referenceID`
+
+### **Important Notes**
+- **Queue Creation**: Queues must be created elsewhere (not in this service)
+- **Non-Persistent Messages**: Messages use `persistent: false` for compatibility
+- **Reference ID**: Always include for request-response correlation
+- **Error Handling**: Always publish error results to the queue
+- **Cleanup**: Connection cleanup is handled automatically
+
+### **Dependencies**
+The following packages are required only if using RabbitMQ:
+- `amqplib`: RabbitMQ client library
+- `@types/amqplib`: TypeScript definitions
+
+### **Files Added/Modified**
+When implementing RabbitMQ:
+
+#### **New Files:**
+- `src/clients/rabbitmq.ts`: RabbitMQ service client
+- `src/types/rabbitmq.ts`: Message interfaces
+- `src/backgroundTaskHandler.ts`: Background task processor
+
+#### **Modified Files:**
+- `src/index.ts`: Updated to use RabbitMQ for both HTTP and WebSocket endpoints
+
+### **Implementation Example**
+```typescript
+// Only implement if your access point needs long-running job support
+import { RabbitMQService } from './clients/rabbitmq';
+
+const runNaturalFunction = async (
+  req: Request,
+  res: Response,
+  balanceRunMain: BalanceRunMain,
+  responseHandler: ResponseHandler
+): Promise<void> => {
+  try {
+    const { prompt, accountNFT, userAuthPayload, queueName, referenceID } = req.body;
+    
+    // Check if this is a long-running job
+    if (queueName && referenceID) {
+      // Start background task
+      startBackgroundTask(prompt, accountNFT, userAuthPayload, queueName, referenceID);
+      
+      // Return immediately
+      responseHandler.sendFinalResponse({
+        success: true,
+        message: `Task started in background. Results will be published to queue: ${queueName}`,
+        data: {
+          queueName,
+          status: "started",
+          message: "Task process initiated successfully",
+          referenceID
+        }
+      });
+      return;
+    }
+    
+    // Handle normal quick requests without RabbitMQ
+    // ... existing logic for quick responses
+  } catch (error) {
+    responseHandler.sendError(error.message, 500);
+  }
+};
+```
+
+## 22. REST API Endpoint Rules: Use Only SDK-Provided Endpoints
 
 ### **MANDATORY: Use Only SDK-Provided Endpoints**
 Your AI Access Point **MUST** use only the REST API endpoints provided by the SDK. Do not create custom endpoints for different types of requests.
