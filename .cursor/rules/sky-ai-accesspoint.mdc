@@ -1,7 +1,7 @@
 ---
 alwaysApply: false
 ---
-# ai-access-point SDK Rules (Updated v0.3.4)
+# ai-access-point SDK Rules (Updated v0.3.9)
 
 ## 1. No Socket.IO or WebSocket Support
 - All Socket.IO and WebSocket code, tests, and documentation are deprecated and must not be used.
