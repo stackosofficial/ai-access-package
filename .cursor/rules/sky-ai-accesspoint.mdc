@@ -3205,10 +3205,10 @@ const runNaturalFunction = async (
 };
 ```
 
-## 22. REST API Endpoint Rules: Use Only SDK-Provided Endpoints
+## 22. REST API Endpoint Rules: All Endpoints Created by SDK
 
-### **MANDATORY: Use Only SDK-Provided Endpoints**
-Your AI Access Point **MUST** use only the REST API endpoints provided by the SDK. Do not create custom endpoints for different types of requests.
+### **MANDATORY: All Endpoints Created by SDK Only**
+Your AI Access Point **MUST NOT** create any custom endpoints. **ALL endpoints are automatically created by the SDK** during initialization. Do not add any `app.post()`, `app.get()`, or other route definitions in your main application code.
 
 ### **✅ ALLOWED Endpoints (SDK-Provided Only)**
 The SDK automatically creates these endpoints during initialization:
@@ -3220,13 +3220,17 @@ The SDK automatically creates these endpoints during initialization:
 5. **`POST /revoke-api-key`** - Revoke existing API key
 6. **`GET /health`** - Health check endpoint (optional)
 
-### **❌ FORBIDDEN: Custom Endpoints**
-Do NOT create any of these custom endpoints:
-- ❌ `POST /twitter/analyze` - Custom Twitter endpoint
-- ❌ `POST /gmail/read` - Custom Gmail endpoint
-- ❌ `POST /analyze-domain` - Custom domain analysis endpoint
-- ❌ `POST /generate-content` - Custom content generation endpoint
-- ❌ Any other custom endpoints for specific services
+### **❌ FORBIDDEN: Creating Any Endpoints**
+**NEVER create any endpoints in your main application code:**
+
+- ❌ `app.post('/custom-endpoint', ...)` - Custom POST endpoints
+- ❌ `app.get('/custom-endpoint', ...)` - Custom GET endpoints  
+- ❌ `app.put('/custom-endpoint', ...)` - Custom PUT endpoints
+- ❌ `app.delete('/custom-endpoint', ...)` - Custom DELETE endpoints
+- ❌ `app.use('/custom-route', router)` - Custom route middleware
+- ❌ Any other `app.*()` route definitions
+
+**The SDK automatically creates ALL necessary endpoints during initialization.**
 
 ### **✅ CORRECT: Single Endpoint Approach**
 Use **ONLY** the `/natural-request` endpoint for all AI processing. Let the AI model decide which service to use based on the user's prompt.
@@ -3257,6 +3261,52 @@ The AI model in your `runNaturalFunction` should:
 3. **Check authentication** for the required service
 4. **Execute the appropriate action** based on the prompt
 5. **Return unified response** format
+
+### **❌ WRONG: Creating Custom Endpoints**
+```typescript
+// ❌ NEVER DO THIS - Creating custom endpoints
+const app = express();
+
+// ❌ WRONG - Custom endpoint for Twitter
+app.post('/twitter/analyze', async (req, res) => {
+  // Twitter analysis logic
+});
+
+// ❌ WRONG - Custom endpoint for Gmail  
+app.post('/gmail/read', async (req, res) => {
+  // Gmail reading logic
+});
+
+// ❌ WRONG - Custom health endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'healthy' });
+});
+
+// ❌ WRONG - Custom route middleware
+app.use('/api', customRouter);
+```
+
+### **✅ CORRECT: No Custom Endpoints**
+```typescript
+// ✅ CORRECT: Only SDK initialization, NO custom endpoints
+const app = express();
+
+// Only middleware setup
+app.use(cors());
+app.use(bodyParser.json());
+
+// SDK initialization creates ALL endpoints automatically
+const balanceRunMain = await initAIAccessPoint(
+  env, skyNode, app, runNaturalFunction, true, upload, config
+);
+
+// NO app.post(), app.get(), app.use() calls here!
+// The SDK handles everything automatically
+
+app.listen(port, () => {
+  console.log(`Service running on http://localhost:${port}`);
+});
+```
 
 ### **Example Implementation**
 ```typescript
@@ -3568,5 +3618,8 @@ async function testSingleEndpoint() {
 4. **❌ NO custom endpoints** for specific services
 5. **✅ Single response format** for all services
 6. **✅ AI-driven service selection** and parameter extraction
+7. **❌ NEVER create any endpoints** - SDK creates ALL endpoints automatically
+8. **✅ Only use `app.use()` for middleware** (cors, bodyParser, etc.)
+9. **✅ Let SDK handle all routing** and endpoint creation
 
 **Remember:** The user should only need to send a prompt, userAuthPayload, and accountNFT. The AI model handles everything else!
