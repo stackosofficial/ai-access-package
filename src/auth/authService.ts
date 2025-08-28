@@ -18,26 +18,50 @@ export abstract class AuthService {
   }
 
   // Core auth operations
-  async saveAuth(userAddress: string, nftId: string, authData: any): Promise<void> {
+  async saveAuth(req: any, authData: any): Promise<void> {
     try {
-      await this.pool.query(
-        `INSERT INTO auth_data (user_address, nft_id, backend_id, auth_data, updated_at)
-         VALUES ($1, $2, $3, $4, NOW())
-         ON CONFLICT (user_address, nft_id, backend_id)
-         DO UPDATE SET auth_data = $4, updated_at = NOW()`,
-        [userAddress, nftId, this.backendId, JSON.stringify(authData)]
+      const userAddress = req.body.walletAddress;
+      const nftId = req.body.accountNFT.nftID;
+      const agentCollection = req?.body?.agentCollection || null;
+      const agentCollectionJson = agentCollection ? JSON.stringify(agentCollection) : null;
+      
+      // Check if a record exists with the exact same parameters
+      const existingRecord = await this.pool.query(
+        'SELECT user_address FROM auth_data WHERE user_address = $1 AND nft_id = $2 AND backend_id = $3 AND (agent_collection IS NOT DISTINCT FROM $4)',
+        [userAddress, nftId, this.backendId, agentCollectionJson]
       );
+      
+      if (existingRecord.rows.length > 0) {
+        // Update existing record - all fields match
+        await this.pool.query(
+          'UPDATE auth_data SET auth_data = $1, updated_at = NOW() WHERE user_address = $2 AND nft_id = $3 AND backend_id = $4 AND (agent_collection IS NOT DISTINCT FROM $5)',
+          [JSON.stringify(authData), userAddress, nftId, this.backendId, agentCollectionJson]
+        );
+        console.log('✅ Updated existing auth record');
+      } else {
+        // Create new record - at least one field is different
+        await this.pool.query(
+          'INSERT INTO auth_data (user_address, nft_id, backend_id, agent_collection, auth_data, updated_at) VALUES ($1, $2, $3, $4, $5, NOW())',
+          [userAddress, nftId, this.backendId, agentCollectionJson, JSON.stringify(authData)]
+        );
+        console.log('✅ Created new auth record');
+      }
     } catch (error) {
       console.error('Error saving auth data:', error);
       throw error;
     }
   }
 
-  async deleteAuth(userAddress: string, nftId: string): Promise<void> {
+  async deleteAuth(req: any): Promise<void> {
     try {
+      const userAddress = req.body.walletAddress;
+      const nftId = req.body.accountNFT.nftID;
+      const agentCollection = req?.body?.agentCollection || null;
+      const agentCollectionJson = agentCollection ? JSON.stringify(agentCollection) : null;
+      
       await this.pool.query(
-        'DELETE FROM auth_data WHERE user_address = $1 AND nft_id = $2 AND backend_id = $3',
-        [userAddress, nftId, this.backendId]
+        'DELETE FROM auth_data WHERE user_address = $1 AND nft_id = $2 AND backend_id = $3 AND (agent_collection IS NOT DISTINCT FROM $4)',
+        [userAddress, nftId, this.backendId, agentCollectionJson]
       );
     } catch (error) {
       console.error('Error deleting auth data:', error);
@@ -45,11 +69,16 @@ export abstract class AuthService {
     }
   }
 
-  async getAuth(userAddress: string, nftId: string): Promise<any | null> {
+  async getAuth(req: any): Promise<any | null> {
     try {
+      const userAddress = req.body.walletAddress;
+      const nftId = req.body.accountNFT.nftID;
+      const agentCollection = req?.body?.agentCollection || null;
+      const agentCollectionJson = agentCollection ? JSON.stringify(agentCollection) : null;
+      
       const result = await this.pool.query(
-        'SELECT auth_data FROM auth_data WHERE user_address = $1 AND nft_id = $2 AND backend_id = $3',
-        [userAddress, nftId, this.backendId]
+        'SELECT auth_data FROM auth_data WHERE user_address = $1 AND nft_id = $2 AND backend_id = $3 AND (agent_collection IS NOT DISTINCT FROM $4)',
+        [userAddress, nftId, this.backendId, agentCollectionJson]
       );
       return result.rows.length > 0 ? result.rows[0].auth_data : null;
     } catch (error) {
@@ -58,9 +87,9 @@ export abstract class AuthService {
     }
   }
 
-  async checkAuthStatus(userAddress: string, nftId: string): Promise<boolean> {
+  async checkAuthStatus(req: any): Promise<boolean> {
     try {
-      const authData = await this.getAuth(userAddress, nftId);
+      const authData = await this.getAuth(req);
       if (!authData) return false;
 
       // Check if token is expired (if it has expires_at field)
@@ -76,25 +105,27 @@ export abstract class AuthService {
       return false;
     } catch (error) {
       console.error('Error checking auth status:', error);
-      return false;
+      throw error;
     }
   }
 
+
+
   // Extensible methods - developers must implement these
-  abstract generateAuthLink(userAddress: string, nftId: string): Promise<string>;
-  abstract revokeAuth(userAddress: string, nftId: string): Promise<void>;
+  abstract generateAuthLink(req: any): Promise<string>;
+  abstract revokeAuth(req: any): Promise<void>;
 }
 
 // Factory function to create a basic auth service (for testing/development only)
 // Note: This should not be used in production as it throws errors for required methods
 export function createAuthService(): AuthService {
   return new (class extends AuthService {
-    async generateAuthLink(userAddress: string, nftId: string): Promise<string> {
+    async generateAuthLink(req: any): Promise<string> {
       throw new Error('generateAuthLink must be implemented by developer. Please provide a custom AuthService implementation.');
     }
 
-    async revokeAuth(userAddress: string, nftId: string): Promise<void> {
-      await this.deleteAuth(userAddress, nftId);
+    async revokeAuth(req: any): Promise<void> {
+      await this.deleteAuth(req);
     }
   })();
 } 

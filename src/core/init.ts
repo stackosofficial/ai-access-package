@@ -217,12 +217,12 @@ export const initAIAccessPoint = async (
       try {
         // Only check auth if auth service is explicitly provided
         if (authService && req.body.accountNFT?.nftID && req.body.walletAddress) {
-          const isAuthenticated = await authService.checkAuthStatus(req.body.walletAddress, req.body.accountNFT.nftID);
+          const isAuthenticated = await authService.checkAuthStatus(req);
 
           if (!isAuthenticated) {
             // Generate auth link and send it back instead of proceeding
             try {
-              const authLink = await authService.generateAuthLink(req.body.walletAddress, req.body.accountNFT.nftID);
+              const authLink = await authService.generateAuthLink(req);
               return res.status(200).json({
                 success: true,
                 message: "Authentication required, please authenticate using this link: " + authLink,
@@ -334,7 +334,7 @@ export const initAIAccessPoint = async (
               });
             }
 
-            const authLink = await authService!.generateAuthLink(userAddress, nftId);
+            const authLink = await authService!.generateAuthLink(req);
 
             res.json({
               success: true,
@@ -370,7 +370,7 @@ export const initAIAccessPoint = async (
               });
             }
 
-            const isAuthenticated = await authService!.checkAuthStatus(userAddress, nftId);
+            const isAuthenticated = await authService!.checkAuthStatus(req);
 
             res.json({
               success: true,
@@ -484,7 +484,7 @@ export const initAIAccessPoint = async (
               });
             }
 
-            await authService!.revokeAuth(userAddress, nftId);
+            await authService!.revokeAuth(req);
 
             res.json({
               success: true,

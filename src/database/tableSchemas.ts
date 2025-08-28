@@ -162,16 +162,17 @@ export function getAuthTableSchemas(): TableSchema[] {
           user_address TEXT NOT NULL,
           nft_id TEXT NOT NULL,
           backend_id TEXT NOT NULL DEFAULT 'default',
+          agent_collection JSONB,
           auth_data JSONB,
           created_at TIMESTAMPTZ DEFAULT NOW(),
-          updated_at TIMESTAMPTZ DEFAULT NOW(),
-          PRIMARY KEY (user_address, nft_id, backend_id)
+          updated_at TIMESTAMPTZ DEFAULT NOW()
         );
       `,
       requiredColumns: [
         { name: 'user_address', type: 'TEXT', nullable: false },
         { name: 'nft_id', type: 'TEXT', nullable: false },
         { name: 'backend_id', type: 'TEXT', nullable: false, defaultValue: "'default'" },
+        { name: 'agent_collection', type: 'JSONB', nullable: true },
         { name: 'auth_data', type: 'JSONB', nullable: true },
         { name: 'created_at', type: 'TIMESTAMPTZ', defaultValue: 'NOW()' },
         { name: 'updated_at', type: 'TIMESTAMPTZ', defaultValue: 'NOW()' }
