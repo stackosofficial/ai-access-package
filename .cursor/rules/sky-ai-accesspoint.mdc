@@ -122,7 +122,7 @@ export class GmailAuthService extends AuthService {
 ### **AuthService Initialization in Main App**
 ```typescript
 // src/index.ts
-import { initAIAccessPoint, getAuthService } from "@decloudlabs/sky-ai-accesspoint/lib/init";
+import { initAIAccessPoint, getAuthService } from "@decloudlabs/sky-ai-accesspoint";
 import { GmailAuthService } from "./services/GmailAuthService";
 
 const setup = async () => {
@@ -163,7 +163,7 @@ const setup = async () => {
 ### **Accessing AuthService Globally**
 ```typescript
 // Get the global auth service instance
-import { getAuthService } from "@decloudlabs/sky-ai-accesspoint/lib/init";
+import { getAuthService } from "@decloudlabs/sky-ai-accesspoint";
 
 const authService = getAuthService();
 if (authService) {
@@ -251,7 +251,7 @@ const runNaturalFunction = async (
 ```typescript
 // src/routes/authRoutes.ts
 import express, { Request, Response } from 'express';
-import { getAuthService } from '@decloudlabs/sky-ai-accesspoint/lib/init';
+import { getAuthService } from '@decloudlabs/sky-ai-accesspoint';
 import axios from 'axios';
 
 const router = express.Router();
@@ -899,6 +899,81 @@ testNaturalRequests();
 }
 ```
 
+## 12.1. Correct Import Patterns (Updated v0.3.9)
+
+### **Main Package Imports**
+```typescript
+// ✅ CORRECT: Import from main package
+import { initAIAccessPoint, getAuthService } from "@decloudlabs/sky-ai-accesspoint";
+
+// ❌ WRONG: Don't use lib/init path
+import { initAIAccessPoint } from "@decloudlabs/sky-ai-accesspoint/lib/init";
+```
+
+### **Type Imports**
+```typescript
+// ✅ CORRECT: Import types from specific paths
+import { EnhancedBalanceRunMain } from "@decloudlabs/sky-ai-accesspoint/lib/core/init";
+import { ResponseHandler } from "@decloudlabs/sky-ai-accesspoint/lib/types/types";
+import { AuthService } from "@decloudlabs/sky-ai-accesspoint/lib/auth/authService";
+
+// ❌ WRONG: Don't import types from main package
+import { ResponseHandler } from "@decloudlabs/sky-ai-accesspoint";
+```
+
+### **Complete Import Example**
+```typescript
+import dotenv from "dotenv";
+dotenv.config();
+import express, { Request, Response } from "express";
+import SkyMainNodeJS from "@decloudlabs/skynet/lib/services/SkyMainNodeJS";
+import { getSkyNode } from "./clients/skynet";
+import { initAIAccessPoint } from "@decloudlabs/sky-ai-accesspoint";
+import { EnhancedBalanceRunMain } from "@decloudlabs/sky-ai-accesspoint/lib/core/init";
+import { ResponseHandler } from "@decloudlabs/sky-ai-accesspoint/lib/types/types";
+import cors from "cors";
+import bodyParser from "body-parser";
+import multer from "multer";
+```
+
+### **Function Signature**
+```typescript
+// ✅ CORRECT: Use EnhancedBalanceRunMain type
+const runNaturalFunction = async (
+  req: Request,
+  res: Response,
+  balanceRunMain: EnhancedBalanceRunMain,
+  responseHandler: ResponseHandler
+): Promise<void> => {
+  // Implementation
+};
+
+// ❌ WRONG: Don't use BalanceRunMain directly
+const runNaturalFunction = async (
+  req: Request,
+  res: Response,
+  balanceRunMain: BalanceRunMain, // This will cause import errors
+  responseHandler: ResponseHandler
+): Promise<void> => {
+  // Implementation
+};
+```
+
+### **Import Troubleshooting**
+If you encounter import errors:
+
+1. **Check Package Structure**: Verify the package is installed correctly
+   ```bash
+   ls -la node_modules/@decloudlabs/sky-ai-accesspoint/lib/
+   ```
+
+2. **Verify Exports**: Check what's actually exported
+   ```bash
+   cat node_modules/@decloudlabs/sky-ai-accesspoint/lib/core/index.d.ts
+   ```
+
+3. **Use Correct Paths**: Always use the paths shown in the examples above
+
 ## 13. Required Skynet Client Setup (Fixed Code)
 ```typescript
 import SkyMainNodeJS from '@decloudlabs/skynet/lib/services/SkyMainNodeJS';
@@ -951,12 +1026,12 @@ dotenv.config();
 import express, { Request, Response } from "express";
 import SkyMainNodeJS from "@decloudlabs/skynet/lib/services/SkyMainNodeJS";
 import { getSkyNode } from "./clients/skynet";
-import { initAIAccessPoint } from "@decloudlabs/sky-ai-accesspoint/lib/init";
+import { initAIAccessPoint } from "@decloudlabs/sky-ai-accesspoint";
+import { EnhancedBalanceRunMain } from "@decloudlabs/sky-ai-accesspoint/lib/core/init";
+import { ResponseHandler } from "@decloudlabs/sky-ai-accesspoint/lib/types/types";
 import cors from "cors";
 import bodyParser from "body-parser";
 import multer from "multer";
-import BalanceRunMain from '@decloudlabs/sky-ai-accesspoint/lib/balanceRunMain';
-import { ResponseHandler } from '@decloudlabs/sky-ai-accesspoint/lib/types/types';
 
 const app = express();
 app.use(cors());
@@ -975,7 +1050,7 @@ const upload = multer({
 const runNaturalFunction = async (
   req: Request,
   res: Response,
-  balanceRunMain: BalanceRunMain,
+  balanceRunMain: EnhancedBalanceRunMain,
   responseHandler: ResponseHandler
 ): Promise<void> => {
   try {
@@ -1122,11 +1197,11 @@ dotenv.config();
 import express, { Request, Response } from "express";
 import SkyMainNodeJS from "@decloudlabs/skynet/lib/services/SkyMainNodeJS";
 import { getSkyNode } from "./clients/skynet";
-import { initAIAccessPoint } from "@decloudlabs/sky-ai-accesspoint/lib/init";
+import { initAIAccessPoint } from "@decloudlabs/sky-ai-accesspoint";
+import { EnhancedBalanceRunMain } from "@decloudlabs/sky-ai-accesspoint/lib/core/init";
+import { ResponseHandler } from "@decloudlabs/sky-ai-accesspoint/lib/types/types";
 import cors from "cors";
 import bodyParser from "body-parser";
-import BalanceRunMain from '@decloudlabs/sky-ai-accesspoint/lib/balanceRunMain';
-import { ResponseHandler } from '@decloudlabs/sky-ai-accesspoint/lib/types/types';
 
 const app = express();
 app.use(cors());
@@ -1137,7 +1212,7 @@ const port = process.env.PORT || 3000;
 const runNaturalFunction = async (
   req: Request,
   res: Response,
-  balanceRunMain: BalanceRunMain,
+  balanceRunMain: EnhancedBalanceRunMain,
   responseHandler: ResponseHandler
 ): Promise<void> => {
   try {
@@ -1324,7 +1399,7 @@ export class GmailAuthService extends AuthService {
 ```typescript
 // src/routes/authRoutes.ts
 import express, { Request, Response } from 'express';
-import { getAuthService } from '@decloudlabs/sky-ai-accesspoint/lib/init';
+import { getAuthService } from '@decloudlabs/sky-ai-accesspoint';
 import axios from 'axios';
 
 const router = express.Router();
@@ -1398,13 +1473,13 @@ dotenv.config();
 import express, { Request, Response } from "express";
 import SkyMainNodeJS from "@decloudlabs/skynet/lib/services/SkyMainNodeJS";
 import { getSkyNode } from "./clients/skynet";
-import { initAIAccessPoint, getAuthService } from "@decloudlabs/sky-ai-accesspoint/lib/init";
+import { initAIAccessPoint, getAuthService } from "@decloudlabs/sky-ai-accesspoint";
+import { EnhancedBalanceRunMain } from "@decloudlabs/sky-ai-accesspoint/lib/core/init";
+import { ResponseHandler } from "@decloudlabs/sky-ai-accesspoint/lib/types/types";
 import { GmailAuthService } from "./services/GmailAuthService";
 import authRoutes from "./routes/authRoutes";
 import cors from "cors";
 import bodyParser from "body-parser";
-import BalanceRunMain from '@decloudlabs/sky-ai-accesspoint/lib/balanceRunMain';
-import { ResponseHandler } from '@decloudlabs/sky-ai-accesspoint/lib/types/types';
 
 const app = express();
 app.use(cors());
@@ -1415,7 +1490,7 @@ const port = process.env.PORT || 3000;
 const runNaturalFunction = async (
   req: Request,
   res: Response,
-  balanceRunMain: BalanceRunMain,
+  balanceRunMain: EnhancedBalanceRunMain,
   responseHandler: ResponseHandler
 ): Promise<void> => {
   try {
