@@ -161,18 +161,8 @@ export const initAIAccessPoint = async (
 
     const balanceRunMain = new BalanceRunMain(env, 60 * 1000, skyNodeParam, pool);
 
-    const contAddrResp = await skyNode.contractService.callContractRead<
-      string,
-      string
-    >(
-      skyNode.contractService.BalanceSettler.getSubnetPriceCalculator(
-        balanceRunMain.envConfig.env.SUBNET_ID
-      ),
-      (res) => res
-    );
-    if (contAddrResp.success == false) return contAddrResp;
-    const contractAddress = contAddrResp.data;
-    balanceRunMain.envConfig.env.SERVER_COST_CONTRACT_ADDRESS = contractAddress;
+    // No longer need to get contract address from old system
+    // We use hardcoded fractional contract address in SkynetFractionalPaymentService
 
     await balanceRunMain.setup();
     if (runUpdate) {

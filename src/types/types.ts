@@ -6,8 +6,6 @@ export interface ENVDefinition {
   WALLET_PRIVATE_KEY: string;
   SUBNET_ID: string;
   POSTGRES_URL: string;
-  SERVER_COST_CONTRACT_ADDRESS: string;
-  SKYNET_FRACTIONAL_CONTRACT_ADDRESS: string;
 }
 
 export interface NFTCosts {
