@@ -7,6 +7,7 @@ export interface ENVDefinition {
   SUBNET_ID: string;
   POSTGRES_URL: string;
   SERVER_COST_CONTRACT_ADDRESS: string;
+  SKYNET_FRACTIONAL_CONTRACT_ADDRESS: string;
 }
 
 export interface NFTCosts {
