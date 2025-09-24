@@ -74,25 +74,14 @@ export default class BalanceRunMain {
   };
 
   addCost = async (
-    accountNFT: AccountNFT,
+    apiKeyId: string,
     cost: string
   ): Promise<APICallReturn<boolean>> => {
     try {
-      // Get the NFT owner's address
-      const skyNode = getSkyNode();
-      if (!skyNode) {
-        return {
-          success: false,
-          data: new Error("SkyNode not initialized")
-        };
-      }
-
-      // Get the NFT owner's wallet address
-      const ownerAddress = await skyNode.contractService.CollectionNFT.ownerOf(accountNFT);
-      
       // Add cost to database using the new fractional payment system
+      // We store costs by API key ID, not wallet address
       const result = await this.balanceExtractService.addCost(
-        ownerAddress,
+        apiKeyId,
         this.envConfig.env.SUBNET_ID,
         cost
       );
@@ -102,7 +91,7 @@ export default class BalanceRunMain {
         return result;
       }
 
-      console.log(`✅ Added cost ${cost} wei for NFT ${accountNFT.collectionID}:${accountNFT.nftID} (owner: ${ownerAddress})`);
+      console.log(`✅ Added cost ${cost} wei for API key ${apiKeyId}`);
       return { success: true, data: true };
     } catch (error) {
       console.error("❌ Error in addCost:", error);

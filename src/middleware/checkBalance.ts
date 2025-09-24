@@ -8,6 +8,7 @@ import {
 import SkynetFractionalPaymentService from "../services/payment/skynetFractionalPaymentService";
 import SkyMainNodeJS from "@decloudlabs/skynet/lib/services/SkyMainNodeJS";
 import ENVConfig from "../core/envConfig";
+import { Pool } from "pg";
 
 export const checkBalance = async (
   req: Request,
@@ -17,44 +18,15 @@ export const checkBalance = async (
   skyNode: SkyMainNodeJS
 ) => {
   try {
-    const readByte32 =
-      "0x917ec7ea41e5f357223d15148fe9b320af36ca576055af433ea3445b39221799";
-    const contractBasedDeploymentByte32 =
-      "0x503cf060389b91af8851125bd70ce66d16d12330718b103fc7674ef6d27e70c9";
-    const { accountNFT, walletAddress } = req.body;
+    // Get values already set by protect middleware (no need for another database call)
+    const apiKeyId = (req as any).apiKeyId;
+    const walletAddress = req.body.walletAddress;
 
-    if (!accountNFT) {
-      return res.json({
+    if (!apiKeyId || !walletAddress) {
+      return res.status(401).json({
         success: false,
-        data: new Error("Not authorized to access this route").toString(),
+        error: "Authentication data not available"
       });
-    }
-
-    const ownerAddress = await skyNode.contractService.CollectionNFT.ownerOf(
-      accountNFT
-    );
-
-    if (ownerAddress.toLowerCase() !== walletAddress.toLowerCase()) {
-      const callHasRole = async (roleValue: string) =>
-        await hasRole(
-          accountNFT,
-          roleValue,
-          walletAddress,
-          skyNode.contractService
-        );
-
-      const [hasReadRoleResp, hasDeployerRoleResp] = await Promise.all([
-        callHasRole(readByte32),
-        callHasRole(contractBasedDeploymentByte32),
-      ]);
-
-      if (!hasReadRoleResp && !hasDeployerRoleResp) {
-        console.log(`❌ Access denied: User ${walletAddress} lacks required roles for NFT ${accountNFT.collectionID}:${accountNFT.nftID}`);
-        return res.json({
-          success: false,
-          data: new Error("Not authorized to access this route").toString(),
-        });
-      }
     }
 
     // Initialize fractional payment service
@@ -74,7 +46,6 @@ export const checkBalance = async (
     const userBalance = balanceResponse.data;
 
     // Get total pending costs from database for this user across all subnets
-    const { Pool } = await import("pg");
     const pool = new Pool({
       connectionString: process.env.POSTGRES_URL,
       ssl: { rejectUnauthorized: false }
@@ -86,7 +57,7 @@ export const checkBalance = async (
       WHERE api_key = $1
     `;
     
-    const pendingCostsResult = await pool.query(pendingCostsQuery, [walletAddress]);
+    const pendingCostsResult = await pool.query(pendingCostsQuery, [apiKeyId]);
     const totalPendingCosts = BigInt(pendingCostsResult.rows[0].total_pending || "0");
 
     // Calculate available balance: contractBalance - databaseCosts

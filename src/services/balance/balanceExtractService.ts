@@ -51,11 +51,11 @@ export default class BalanceExtractService {
 
   /**
    * Add cost to database for later batch processing
-   * @param userAddress - User's wallet address
+   * @param apiKeyId - API key ID (stored as api_key in database)
    * @param subnetId - Subnet identifier
    * @param amount - Cost amount in wei
    */
-  addCost = async (userAddress: string, subnetId: string, amount: string): Promise<APICallReturn<boolean>> => {
+  addCost = async (apiKeyId: string, subnetId: string, amount: string): Promise<APICallReturn<boolean>> => {
     try {
       // Insert or update cost in fractional_payments table
       const query = `
@@ -67,8 +67,8 @@ export default class BalanceExtractService {
           updated_at = CURRENT_TIMESTAMP
       `;
 
-      await this.pool.query(query, [userAddress, subnetId, amount]);
-      console.log(`📝 Added cost ${amount} wei for user ${userAddress} (subnet: ${subnetId})`);
+      await this.pool.query(query, [apiKeyId, subnetId, amount]);
+      console.log(`📝 Added cost ${amount} wei for API key ${apiKeyId} (subnet: ${subnetId})`);
       
       return { success: true, data: true };
     } catch (error) {
@@ -89,7 +89,19 @@ export default class BalanceExtractService {
 
     for (const pendingCost of pendingCostsBatch) {
       try {
-        const { api_key: userAddress, amount, subnet_id } = pendingCost;
+        const { api_key: apiKeyId, amount, subnet_id } = pendingCost;
+
+        // Get wallet address from API key
+        const apiKeyQuery = `SELECT wallet_address FROM api_keys WHERE id = $1`;
+        const apiKeyResult = await this.pool.query(apiKeyQuery, [apiKeyId]);
+        
+        if (apiKeyResult.rows.length === 0) {
+          results.failed++;
+          results.errors.push(`API key ${apiKeyId} not found`);
+          continue;
+        }
+
+        const userAddress = apiKeyResult.rows[0].wallet_address;
 
         // Check if user has sufficient balance before charging
         const balanceCheck = await this.paymentService.hasSufficientBalance(userAddress, amount);
@@ -114,10 +126,10 @@ export default class BalanceExtractService {
           // Reset the cost to 0 in database after successful charge
           await this.pool.query(
             `UPDATE fractional_payments SET amount = '0', updated_at = CURRENT_TIMESTAMP WHERE api_key = $1 AND subnet_id = $2`,
-            [userAddress, subnet_id]
+            [apiKeyId, subnet_id]
           );
           results.successful++;
-          console.log(`✅ Successfully charged ${amount} wei from user ${userAddress} (subnet: ${subnet_id})`);
+          console.log(`✅ Successfully charged ${amount} wei from user ${userAddress} (API key: ${apiKeyId}, subnet: ${subnet_id})`);
         } else {
           results.failed++;
           results.errors.push(`Failed to charge ${userAddress}: ${chargeResponse.data}`);
