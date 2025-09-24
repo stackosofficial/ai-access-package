@@ -2,11 +2,11 @@ import { AIModelResponse, ENVDefinition, JsonSchema } from "../../types/types";
 import { AccountNFT, APICallReturn, UrsulaAuth } from "@decloudlabs/skynet/lib/types/types";
 import { sleep } from "@decloudlabs/skynet/lib/utils/utils";
 import BalanceExtractService from "./balanceExtractService";
-import ServerBalanceDatabaseService from "./serverBalanceDatabaseService";
 import ENVConfig from "../../core/envConfig";
 import { ethers } from "ethers";
 import axios from "axios";
 import SkyMainNodeJS from "@decloudlabs/skynet/lib/services/SkyMainNodeJS";
+import { getSkyNode } from "../../core/init";
 import { Pool } from "pg";
 
 export default class BalanceRunMain {
@@ -14,7 +14,6 @@ export default class BalanceRunMain {
   nextRunTime: number;
   envConfig: ENVConfig;
   balanceExtractService: BalanceExtractService;
-  serverBalanceDatabaseService: ServerBalanceDatabaseService;
   signer: ethers.Wallet;
   jsonProvider: ethers.JsonRpcProvider;
   skyNode: SkyMainNodeJS;
@@ -34,10 +33,6 @@ export default class BalanceRunMain {
       this.jsonProvider
     );
 
-    this.serverBalanceDatabaseService = new ServerBalanceDatabaseService(
-      this.envConfig
-    );
-
     this.balanceExtractService = new BalanceExtractService(
       this.envConfig,
       pool
@@ -50,7 +45,6 @@ export default class BalanceRunMain {
       const UPDATE_DURATION = 10 * 1000;
       this.RUN_DURATION = UPDATE_DURATION;
 
-      await this.serverBalanceDatabaseService.setup();
       await this.balanceExtractService.setup();
 
       return true;
@@ -83,24 +77,40 @@ export default class BalanceRunMain {
     accountNFT: AccountNFT,
     cost: string
   ): Promise<APICallReturn<boolean>> => {
-    const extractBalanceResp =
-      await this.serverBalanceDatabaseService.getExtractBalance(accountNFT);
-    if (!extractBalanceResp.success) {
-      console.error("❌ Failed to get extract balance:", extractBalanceResp.data);
-      return extractBalanceResp;
-    }
+    try {
+      // Get the NFT owner's address
+      const skyNode = getSkyNode();
+      if (!skyNode) {
+        return {
+          success: false,
+          data: new Error("SkyNode not initialized")
+        };
+      }
 
-    const resp = await this.serverBalanceDatabaseService.setExtractBalance(
-      accountNFT,
-      (BigInt(extractBalanceResp.data?.costs || 0) + BigInt(cost)).toString()
-    );
-    if (!resp.success) {
+      // Get the NFT owner's wallet address
+      const ownerAddress = await skyNode.contractService.CollectionNFT.ownerOf(accountNFT);
+      
+      // Add cost to database using the new fractional payment system
+      const result = await this.balanceExtractService.addCost(
+        ownerAddress,
+        this.envConfig.env.SUBNET_ID,
+        cost
+      );
+
+      if (!result.success) {
+        console.error("❌ Failed to add cost to database:", result.data);
+        return result;
+      }
+
+      console.log(`✅ Added cost ${cost} wei for NFT ${accountNFT.collectionID}:${accountNFT.nftID} (owner: ${ownerAddress})`);
+      return { success: true, data: true };
+    } catch (error) {
+      console.error("❌ Error in addCost:", error);
       return {
         success: false,
-        data: new Error("Failed to set extract balance"),
+        data: error as Error
       };
     }
-    return { success: true, data: true };
   };
 
   async callAIModel(

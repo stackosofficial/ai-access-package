@@ -8,7 +8,7 @@ import { parseAuth } from "../middleware/parseAuth";
 import { generateApiKey, revokeApiKey } from "../auth/apiKeyService";
 import { AuthService, createAuthService } from "../auth/authService";
 import { DatabaseMigration } from "../database/databaseMigration";
-import { getAllTableSchemas } from "../database/tableSchemas";
+import { getFractionalTableSchemas } from "../database/fractionalTableSchemas";
 import { DataStorageService } from "../services/dataStorage/dataStorageService";
 import SkynetFractionalPaymentService from "../services/payment/skynetFractionalPaymentService";
 import express, { Request, Response, NextFunction } from "express";
@@ -210,8 +210,8 @@ export const initAIAccessPoint = async (
 
     // Initialize all database tables using centralized migration
     const migration = new DatabaseMigration(pool);
-    const allTableSchemas = getAllTableSchemas(env.SUBNET_ID);
-    await migration.migrateTables(allTableSchemas);
+    const fractionalTableSchemas = getFractionalTableSchemas();
+    await migration.migrateTables(fractionalTableSchemas);
 
     // Handler function that wraps runNaturalFunction with ResponseHandler
     const handleRequest = async (req: Request, res: Response, next: NextFunction) => {
