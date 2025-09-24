@@ -7,6 +7,7 @@ import ENVConfig from "../../core/envConfig";
 import { ethers } from "ethers";
 import axios from "axios";
 import SkyMainNodeJS from "@decloudlabs/skynet/lib/services/SkyMainNodeJS";
+import { Pool } from "pg";
 
 export default class BalanceRunMain {
   RUN_DURATION: number;
@@ -18,7 +19,7 @@ export default class BalanceRunMain {
   jsonProvider: ethers.JsonRpcProvider;
   skyNode: SkyMainNodeJS;
 
-  constructor(env: ENVDefinition, extractCostTime: number, skyNode: SkyMainNodeJS) {
+  constructor(env: ENVDefinition, extractCostTime: number, skyNode: SkyMainNodeJS, pool: Pool) {
     this.RUN_DURATION = 5000;
     this.envConfig = new ENVConfig(env);
     this.nextRunTime = new Date().getTime();
@@ -39,7 +40,7 @@ export default class BalanceRunMain {
 
     this.balanceExtractService = new BalanceExtractService(
       this.envConfig,
-      this.serverBalanceDatabaseService
+      pool
     );
     this.skyNode = skyNode;
   }

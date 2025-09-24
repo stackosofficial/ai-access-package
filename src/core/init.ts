@@ -10,6 +10,7 @@ import { AuthService, createAuthService } from "../auth/authService";
 import { DatabaseMigration } from "../database/databaseMigration";
 import { getAllTableSchemas } from "../database/tableSchemas";
 import { DataStorageService } from "../services/dataStorage/dataStorageService";
+import SkynetFractionalPaymentService from "../services/payment/skynetFractionalPaymentService";
 import express, { Request, Response, NextFunction } from "express";
 import multer from "multer";
 import { Pool } from "pg";
@@ -151,7 +152,14 @@ export const initAIAccessPoint = async (
     await setupSkyNode(skyNodeParam);
     globalPostgresUrl = env.POSTGRES_URL;
 
-    const balanceRunMain = new BalanceRunMain(env, 60 * 1000, skyNodeParam);
+    const pool = new Pool({
+      connectionString: env.POSTGRES_URL,
+      ssl: {
+        rejectUnauthorized: false
+      }
+    });
+
+    const balanceRunMain = new BalanceRunMain(env, 60 * 1000, skyNodeParam, pool);
 
     const contAddrResp = await skyNode.contractService.callContractRead<
       string,
@@ -170,13 +178,6 @@ export const initAIAccessPoint = async (
     if (runUpdate) {
       balanceRunMain.update();
     }
-
-    const pool = new Pool({
-      connectionString: env.POSTGRES_URL,
-      ssl: {
-        rejectUnauthorized: false
-      }
-    });
 
     // Test the database connection
     try {
@@ -298,7 +299,7 @@ export const initAIAccessPoint = async (
           await protect(req, res, next, skyNodeParam, pool);
         },
         async (req: Request, res: Response, next: NextFunction) =>
-          await checkBalance(req, res, next, contractAddress, skyNodeParam),
+          await checkBalance(req, res, next, balanceRunMain.envConfig, skyNodeParam),
         handleRequest
       );
     } else {
@@ -309,7 +310,7 @@ export const initAIAccessPoint = async (
           await protect(req, res, next, skyNodeParam, pool);
         },
         async (req: Request, res: Response, next: NextFunction) =>
-          await checkBalance(req, res, next, contractAddress, skyNodeParam),
+          await checkBalance(req, res, next, balanceRunMain.envConfig, skyNodeParam),
         handleRequest
       );
     }
@@ -321,7 +322,7 @@ export const initAIAccessPoint = async (
           await protect(req, res, next, skyNodeParam, pool);
         },
         async (req: Request, res: Response, next: NextFunction) =>
-          await checkBalance(req, res, next, contractAddress, skyNodeParam),
+          await checkBalance(req, res, next, balanceRunMain.envConfig, skyNodeParam),
         async (req: Request, res: Response, next: NextFunction) => {
           try {
             const userAddress = req.body.walletAddress;
@@ -357,7 +358,7 @@ export const initAIAccessPoint = async (
           await protect(req, res, next, skyNodeParam, pool);
         },
         async (req: Request, res: Response, next: NextFunction) =>
-          await checkBalance(req, res, next, contractAddress, skyNodeParam),
+          await checkBalance(req, res, next, balanceRunMain.envConfig, skyNodeParam),
         async (req: Request, res: Response, next: NextFunction) => {
           try {
             const userAddress = req.body.walletAddress;
@@ -393,7 +394,7 @@ export const initAIAccessPoint = async (
         await protect(req, res, next, skyNodeParam, pool);
       },
       async (req: Request, res: Response, next: NextFunction) =>
-        await checkBalance(req, res, next, contractAddress, skyNodeParam),
+        await checkBalance(req, res, next, balanceRunMain.envConfig, skyNodeParam),
       async (req: Request, res: Response, next: NextFunction) => {
         try {
           const result = await generateApiKey(req, pool);
@@ -423,7 +424,7 @@ export const initAIAccessPoint = async (
       await protect(req, res, next, skyNodeParam, pool);
     },
       async (req: Request, res: Response, next: NextFunction) =>
-        await checkBalance(req, res, next, contractAddress, skyNodeParam),
+        await checkBalance(req, res, next, balanceRunMain.envConfig, skyNodeParam),
       async (req: Request, res: Response, next: NextFunction) => {
         try {
           const walletAddress = req.body.walletAddress;
@@ -471,7 +472,7 @@ export const initAIAccessPoint = async (
         await protect(req, res, next, skyNodeParam, pool);
       },
         async (req: Request, res: Response, next: NextFunction) =>
-          await checkBalance(req, res, next, contractAddress, skyNodeParam),
+          await checkBalance(req, res, next, balanceRunMain.envConfig, skyNodeParam),
         async (req: Request, res: Response, next: NextFunction) => {
           try {
             const userAddress = req.body.walletAddress;
@@ -500,14 +501,127 @@ export const initAIAccessPoint = async (
         });
     }
 
+    // Add withdraw funds endpoint (backend wallet only)
+    app.post("/withdraw-funds", parseAuth, async (req: Request, res: Response, next: NextFunction) => {
+      await protect(req, res, next, skyNodeParam, pool);
+    },
+      async (req: Request, res: Response, next: NextFunction) =>
+        await checkBalance(req, res, next, balanceRunMain.envConfig, skyNodeParam),
+      async (req: Request, res: Response, next: NextFunction) => {
+        try {
+          const { userAddress, amount } = req.body;
 
+          if (!userAddress) {
+            return res.status(400).json({
+              success: false,
+              error: "userAddress is required"
+            });
+          }
+
+          if (!amount) {
+            return res.status(400).json({
+              success: false,
+              error: "amount is required"
+            });
+          }
+
+          // Initialize payment service
+          const paymentService = new SkynetFractionalPaymentService(balanceRunMain.envConfig);
+
+          // Check if current signer is backend wallet
+          const isBackendResponse = await paymentService.isCurrentSignerBackendWallet();
+          if (!isBackendResponse.success || !isBackendResponse.data) {
+            return res.status(403).json({
+              success: false,
+              error: "Access denied: Only backend wallet can withdraw funds"
+            });
+          }
+
+          // Get user's contract balance
+          const contractBalanceResponse = await paymentService.getUserDepositBalance(userAddress);
+          if (!contractBalanceResponse.success) {
+            return res.status(500).json({
+              success: false,
+              error: `Failed to get user contract balance: ${contractBalanceResponse.data}`
+            });
+          }
+
+          // Get total pending costs from database for this user across all subnets
+          const pendingCostsQuery = `
+            SELECT COALESCE(SUM(CAST(amount AS BIGINT)), 0) as total_pending
+            FROM fractional_payments 
+            WHERE api_key = $1
+          `;
+          
+          const pendingCostsResult = await pool.query(pendingCostsQuery, [userAddress]);
+          const totalPendingCosts = BigInt(pendingCostsResult.rows[0].total_pending || "0");
+
+          // Calculate available balance: contractBalance - databaseCosts
+          const contractBalance = contractBalanceResponse.data;
+          const availableBalance = contractBalance - totalPendingCosts;
+
+          // Check minimum balance requirement
+          const minimumBalance = BigInt(process.env.MINIMUM_BALANCE || "0");
+          if (minimumBalance > 0 && availableBalance < minimumBalance) {
+            return res.status(400).json({
+              success: false,
+              error: `Insufficient available balance. Available: ${availableBalance} wei, Minimum required: ${minimumBalance} wei, Pending costs: ${totalPendingCosts} wei`
+            });
+          }
+
+          // Check if withdrawal amount is valid
+          const withdrawalAmount = BigInt(amount);
+          if (withdrawalAmount <= 0) {
+            return res.status(400).json({
+              success: false,
+              error: "Withdrawal amount must be greater than 0"
+            });
+          }
+
+          if (withdrawalAmount > availableBalance) {
+            return res.status(400).json({
+              success: false,
+              error: `Withdrawal amount (${withdrawalAmount} wei) exceeds available balance (${availableBalance} wei)`
+            });
+          }
+
+          // Execute withdrawal
+          const withdrawResponse = await paymentService.withdrawUserFunds(userAddress, amount);
+          if (!withdrawResponse.success) {
+            return res.status(500).json({
+              success: false,
+              error: `Failed to withdraw funds: ${withdrawResponse.data}`
+            });
+          }
+
+          console.log(`✅ Successfully withdrew ${amount} wei for user ${userAddress}. Available balance: ${availableBalance} wei`);
+
+          res.json({
+            success: true,
+            message: `Successfully withdrew ${amount} wei`,
+            data: {
+              withdrawnAmount: amount,
+              contractBalance: contractBalance.toString(),
+              pendingCosts: totalPendingCosts.toString(),
+              availableBalance: availableBalance.toString(),
+              remainingBalance: (availableBalance - withdrawalAmount).toString()
+            }
+          });
+        } catch (error: any) {
+          console.error("❌ Error in withdraw-funds handler:", error);
+          res.status(500).json({
+            success: false,
+            error: error.message || "Internal server error"
+          });
+        }
+      });
 
     // Fetch data endpoint
     app.post("/fetch-data", parseAuth, async (req: Request, res: Response, next: NextFunction) => {
       await protect(req, res, next, skyNodeParam, pool);
     },
       async (req: Request, res: Response, next: NextFunction) =>
-        await checkBalance(req, res, next, contractAddress, skyNodeParam),
+        await checkBalance(req, res, next, balanceRunMain.envConfig, skyNodeParam),
       async (req: Request, res: Response, next: NextFunction) => {
         try {
           const { referenceId } = req.body;

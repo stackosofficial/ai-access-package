@@ -5,16 +5,15 @@ import {
   ETHAddress,
   SkyContractService,
 } from "@decloudlabs/skynet/lib/types/types";
-import { getServerCostCalculator } from "../utils/utils";
+import SkynetFractionalPaymentService from "../services/payment/skynetFractionalPaymentService";
 import SkyMainNodeJS from "@decloudlabs/skynet/lib/services/SkyMainNodeJS";
-import { SUBNET_COLLECTION_ID } from "@decloudlabs/skynet/lib/utils/constants";
-import { ethers } from "ethers";
+import ENVConfig from "../core/envConfig";
 
 export const checkBalance = async (
   req: Request,
   res: Response,
   next: NextFunction,
-  SERVER_COST_CONTRACT_ADDRESS: string,
+  envConfig: ENVConfig,
   skyNode: SkyMainNodeJS
 ) => {
   try {
@@ -58,106 +57,61 @@ export const checkBalance = async (
       }
     }
 
-    const serverCostContract = getServerCostCalculator(
-      SERVER_COST_CONTRACT_ADDRESS,
-      skyNode.contractService.signer
-    );
+    // Initialize fractional payment service
+    const paymentService = new SkynetFractionalPaymentService(envConfig);
 
-    const isEnabledResp = await skyNode.contractService.callContractRead<
-      boolean,
-      boolean
-    >(serverCostContract.isEnabled(accountNFT), (res) => res);
-
-    const walletHandlerAddress = await serverCostContract.walletHandler();
-    console.log("walletHandlerAddress", walletHandlerAddress);
-
-    // Create wallet handler contract instance
-    const walletHandlerContract = new ethers.Contract(
-      walletHandlerAddress,
-      [
-        {
-          "inputs": [
-            {
-              "components": [
-                {
-                  "internalType": "uint256",
-                  "name": "collectionID",
-                  "type": "uint256"
-                },
-                {
-                  "internalType": "uint256",
-                  "name": "nftID",
-                  "type": "uint256"
-                }
-              ],
-              "internalType": "struct IAccountNFT.AccountNFT",
-              "name": "",
-              "type": "tuple"
-            },
-            {
-              "internalType": "uint256",
-              "name": "",
-              "type": "uint256"
-            }
-          ],
-          "name": "getAccountBalance",
-          "outputs": [
-            {
-              "internalType": "uint256",
-              "name": "",
-              "type": "uint256"
-            }
-          ],
-          "stateMutability": "pure",
-          "type": "function"
-        }
-      ],
-      skyNode.contractService.signer
-    );
-
-    // Convert string values to BigInt for contract call
-    const accountNFTForContract = {
-      collectionID: BigInt(accountNFT.collectionID),
-      nftID: BigInt(accountNFT.nftID)
-    };
-    const subnetID = BigInt(process.env.SUBNET_ID || "0");
-
-    const availableBalance = await skyNode.contractService.callContractRead<
-      bigint,
-      bigint
-    >(walletHandlerContract.getAccountBalance(accountNFTForContract, subnetID), (res) => res);
-
-    if (!isEnabledResp.success) {
-      console.log(`❌ Balance check failed: NFT ${accountNFT.collectionID}:${accountNFT.nftID} is not enabled`);
+    // Check user's deposit balance in the fractional escrow contract
+    const balanceResponse = await paymentService.getUserDepositBalance(walletAddress);
+    
+    if (!balanceResponse.success) {
+      console.log(`❌ Failed to get user deposit balance for ${walletAddress}:`, balanceResponse.data);
       return res.json({
         success: false,
-        data: new Error("Not authorized to access this route").toString(),
+        data: new Error("Failed to check user balance").toString(),
       });
     }
+
+    const userBalance = balanceResponse.data;
+
+    // Get total pending costs from database for this user across all subnets
+    const { Pool } = await import("pg");
+    const pool = new Pool({
+      connectionString: process.env.POSTGRES_URL,
+      ssl: { rejectUnauthorized: false }
+    });
+
+    const pendingCostsQuery = `
+      SELECT COALESCE(SUM(CAST(amount AS BIGINT)), 0) as total_pending
+      FROM fractional_payments 
+      WHERE api_key = $1
+    `;
+    
+    const pendingCostsResult = await pool.query(pendingCostsQuery, [walletAddress]);
+    const totalPendingCosts = BigInt(pendingCostsResult.rows[0].total_pending || "0");
+
+    // Calculate available balance: contractBalance - databaseCosts
+    const availableBalance = userBalance - totalPendingCosts;
 
     // Check minimum balance requirement
     const minimumBalance = BigInt(process.env.MINIMUM_BALANCE || "0");
     if (minimumBalance > 0) {
-      if (!availableBalance.success) {
-        console.log(`❌ Balance check failed: Could not retrieve balance for NFT ${accountNFT.collectionID}:${accountNFT.nftID}`);
+      if (availableBalance < minimumBalance) {
+        console.log(`❌ Insufficient available balance: User ${walletAddress} has ${availableBalance} wei available (contract: ${userBalance} wei, pending: ${totalPendingCosts} wei) but minimum required is ${minimumBalance}`);
         return res.json({
           success: false,
-          data: new Error("Not authorized to access this route").toString(),
+          data: new Error("Insufficient available balance").toString(),
         });
       }
 
-      if (availableBalance.data < minimumBalance) {
-        console.log(`❌ Insufficient balance: NFT ${accountNFT.collectionID}:${accountNFT.nftID} has ${availableBalance.data} but minimum required is ${minimumBalance}`);
-        return res.json({
-          success: false,
-          data: new Error("Insufficient balance").toString(),
-        });
-      }
-
-      console.log(`✅ Balance check passed: NFT ${accountNFT.collectionID}:${accountNFT.nftID} has ${availableBalance.data} (minimum required: ${minimumBalance})`);
+      console.log(`✅ Balance check passed: User ${walletAddress} has ${availableBalance} wei available (contract: ${userBalance} wei, pending: ${totalPendingCosts} wei) (minimum required: ${minimumBalance})`);
     } else {
-      console.log(`ℹ️ Balance check skipped: MINIMUM_BALANCE is 0 or not set`);
+      console.log(`ℹ️ Balance check skipped: MINIMUM_BALANCE is 0 or not set. User ${walletAddress} has ${availableBalance} wei available (contract: ${userBalance} wei, pending: ${totalPendingCosts} wei)`);
     }
+
+    // Add balance information to request for potential use in route handlers
+    req.body.userDepositBalance = userBalance.toString();
+    req.body.availableBalance = availableBalance.toString();
+    req.body.pendingCosts = totalPendingCosts.toString();
 
     next();
   } catch (err: any) {

@@ -21,9 +21,12 @@ export default class SkynetFractionalPaymentService {
   private contractAddress: string;
   private contract: ethers.Contract;
 
-  constructor(envConfig: ENVConfig, contractAddress: string) {
+  // Hardcoded contract address for SkynetFractionalEscrow
+  private static readonly CONTRACT_ADDRESS = "0x8c75166569A4c6Df0f68C8Cbd2BfE5993653e926";
+
+  constructor(envConfig: ENVConfig) {
     this.envConfig = envConfig;
-    this.contractAddress = contractAddress;
+    this.contractAddress = SkynetFractionalPaymentService.CONTRACT_ADDRESS;
     
     const skyNode = getSkyNode();
     if (!skyNode) {
@@ -31,7 +34,7 @@ export default class SkynetFractionalPaymentService {
     }
 
     this.contract = new ethers.Contract(
-      contractAddress,
+      this.contractAddress,
       SkynetContractABI,
       skyNode.contractService.signer
     );

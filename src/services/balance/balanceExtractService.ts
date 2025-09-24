@@ -1,11 +1,9 @@
-import SkyMainNodeJS from "@decloudlabs/skynet/lib/services/SkyMainNodeJS";
 import { AccountNFT, APICallReturn } from "@decloudlabs/skynet/lib/types/types";
 import { NFTCosts } from "../../types/types";
 import ENVConfig from "../../core/envConfig";
-import ServerBalanceDatabaseService from "./serverBalanceDatabaseService";
-import { getServerCostCalculator } from "../../utils/utils";
 import { getSkyNode } from "../../core/init";
-import { DatabaseWriterExecution } from "../../database/databaseWriterExecution";
+import SkynetFractionalPaymentService from "../payment/skynetFractionalPaymentService";
+import { Pool } from "pg";
 
 const NFT_UPDATE_INTERVAL = 1 * 60 * 1000; // 1 minute
 const BATCH_SIZE = 10; // Process 10 NFTs at a time
@@ -13,24 +11,16 @@ const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000; // 1 second
 
 export default class BalanceExtractService {
-  private databaseWriter: DatabaseWriterExecution<NFTCosts[]>;
   private nftCostsToWriteList: NFTCosts[];
   private envConfig: ENVConfig;
-  private databaseService: ServerBalanceDatabaseService;
+  private pool: Pool;
+  private paymentService: SkynetFractionalPaymentService;
 
-  constructor(
-    envConfig: ENVConfig,
-    databaseService: ServerBalanceDatabaseService
-  ) {
+  constructor(envConfig: ENVConfig, pool: Pool) {
     this.nftCostsToWriteList = [];
-    this.databaseWriter = new DatabaseWriterExecution<NFTCosts[]>(
-      "nftCostsWriter",
-      this.scanNFTBalancesInternal,
-      this.addNFTCostsToWrite,
-      NFT_UPDATE_INTERVAL
-    );
     this.envConfig = envConfig;
-    this.databaseService = databaseService;
+    this.pool = pool;
+    this.paymentService = new SkynetFractionalPaymentService(envConfig);
   }
 
   private delay(ms: number): Promise<void> {
@@ -58,72 +48,115 @@ export default class BalanceExtractService {
     throw lastError || new Error("Operation failed after retries");
   }
 
-  private addNFTCostsToWriteInternal = (nftCosts: NFTCosts[]) => {
-    this.nftCostsToWriteList = [...this.nftCostsToWriteList, ...nftCosts];
-  };
 
-  private addNFTCostsToWrite = async (nftCosts: NFTCosts[]) => {
-    // await this.databaseWriter.insert(nftCosts);
-  };
-
-  private async processBatch(nftCostsBatch: NFTCosts[]): Promise<void> {
-    const processedNFTs: NFTCosts[] = [];
-
-    const nftTimestamps = await getNFTTimestamp(nftCostsBatch, this.envConfig);
-
+  /**
+   * Add cost to database for later batch processing
+   * @param userAddress - User's wallet address
+   * @param subnetId - Subnet identifier
+   * @param amount - Cost amount in wei
+   */
+  addCost = async (userAddress: string, subnetId: string, amount: string): Promise<APICallReturn<boolean>> => {
     try {
-      const resp = await this.retryOperation(() =>
-        addCostToContract(nftCostsBatch, this.envConfig)
-      );
+      // Insert or update cost in fractional_payments table
+      const query = `
+        INSERT INTO fractional_payments (api_key, subnet_id, amount, created_at, updated_at)
+        VALUES ($1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (api_key, subnet_id) 
+        DO UPDATE SET 
+          amount = (CAST(fractional_payments.amount AS BIGINT) + CAST($3 AS BIGINT))::TEXT,
+          updated_at = CURRENT_TIMESTAMP
+      `;
 
-      if (!resp.success) {
-        console.error(
-          `❌ Failed to add cost to contract for NFT batch: ${JSON.stringify(
-            nftCostsBatch
-          )}`
-        );
-        return;
-      }
-
-      for (const nftCosts of nftCostsBatch) {
-        if (nftCosts.costs === "0") continue;
-
-        // Update balance in contract
-        const balanceResp = await this.retryOperation(() =>
-          updateBalanceInContract(nftCosts.accountNFT, this.envConfig)
-        );
-
-        // If contract operations succeed, queue the NFT for database update
-        processedNFTs.push(nftCosts);
-      }
-
-      // Update all successful NFTs in database
-      if (processedNFTs.length > 0) {
-        for (const nftCosts of processedNFTs) {
-          await this.databaseService.setExtractBalance(
-            nftCosts.accountNFT,
-            "0" // Reset costs to 0 after processing
-          );
-        }
-        console.log(`✅ Successfully processed ${processedNFTs.length} NFTs`);
-      }
+      await this.pool.query(query, [userAddress, subnetId, amount]);
+      console.log(`📝 Added cost ${amount} wei for user ${userAddress} (subnet: ${subnetId})`);
+      
+      return { success: true, data: true };
     } catch (error) {
-      console.error("❌ Failed to process batch:", error);
-      throw error;
+      console.error("❌ Error adding cost to database:", error);
+      return {
+        success: false,
+        data: error as Error
+      };
+    }
+  };
+
+  private async processBatch(pendingCostsBatch: any[]): Promise<void> {
+    const results = {
+      successful: 0,
+      failed: 0,
+      errors: [] as string[]
+    };
+
+    for (const pendingCost of pendingCostsBatch) {
+      try {
+        const { api_key: userAddress, amount, subnet_id } = pendingCost;
+
+        // Check if user has sufficient balance before charging
+        const balanceCheck = await this.paymentService.hasSufficientBalance(userAddress, amount);
+        if (!balanceCheck.success) {
+          results.failed++;
+          results.errors.push(`Failed to check balance for ${userAddress}: ${balanceCheck.data}`);
+          continue;
+        }
+
+        if (!balanceCheck.data) {
+          results.failed++;
+          results.errors.push(`Insufficient balance for ${userAddress}. Required: ${amount} wei`);
+          continue;
+        }
+
+        // Charge the user for the service
+        const chargeResponse = await this.retryOperation(() =>
+          this.paymentService.chargeForServices(userAddress, amount)
+        );
+
+        if (chargeResponse.success) {
+          // Reset the cost to 0 in database after successful charge
+          await this.pool.query(
+            `UPDATE fractional_payments SET amount = '0', updated_at = CURRENT_TIMESTAMP WHERE api_key = $1 AND subnet_id = $2`,
+            [userAddress, subnet_id]
+          );
+          results.successful++;
+          console.log(`✅ Successfully charged ${amount} wei from user ${userAddress} (subnet: ${subnet_id})`);
+        } else {
+          results.failed++;
+          results.errors.push(`Failed to charge ${userAddress}: ${chargeResponse.data}`);
+        }
+      } catch (error) {
+        results.failed++;
+        results.errors.push(`Error processing ${pendingCost.api_key}: ${error}`);
+      }
+    }
+
+    console.log(`📊 Batch processing completed: ${results.successful} successful, ${results.failed} failed`);
+    if (results.errors.length > 0) {
+      console.error("❌ Processing errors:", results.errors);
     }
   }
 
   private scanNFTBalancesInternal = async () => {
     try {
-      // Get all NFTs with non-zero costs using the cursor
-      const nftCosts: NFTCosts[] = [];
-      for await (const nftCost of this.databaseService.getNFTExtractCursor()) {
-        nftCosts.push(nftCost);
+      // Get all pending costs from fractional_payments table
+      const pendingCostsQuery = `
+        SELECT api_key, subnet_id, amount, created_at
+        FROM fractional_payments 
+        WHERE CAST(amount AS BIGINT) > 0
+        ORDER BY created_at ASC
+      `;
+      
+      const pendingCostsResult = await this.pool.query(pendingCostsQuery);
+      const pendingCosts = pendingCostsResult.rows;
+
+      if (pendingCosts.length === 0) {
+        console.log("ℹ️ No pending costs to process");
+        return;
       }
 
+      console.log(`🔄 Processing ${pendingCosts.length} pending cost records...`);
+
       // Process in batches
-      for (let i = 0; i < nftCosts.length; i += BATCH_SIZE) {
-        const batch = nftCosts.slice(i, i + BATCH_SIZE);
+      for (let i = 0; i < pendingCosts.length; i += BATCH_SIZE) {
+        const batch = pendingCosts.slice(i, i + BATCH_SIZE);
         try {
           await this.processBatch(batch);
         } catch (error) {
@@ -139,73 +172,22 @@ export default class BalanceExtractService {
     }
   };
 
-  setup = async () => {
-    await this.databaseService.setup();
+  setup = async (): Promise<boolean> => {
+    try {
+      console.log("✅ BalanceExtractService setup completed");
+      return true;
+    } catch (error) {
+      console.error("❌ Error setting up BalanceExtractService:", error);
+      return false;
+    }
   };
 
-  update = async () => {
-    await this.databaseWriter.execute();
+  update = async (): Promise<void> => {
+    try {
+      await this.scanNFTBalancesInternal();
+    } catch (error) {
+      console.error("❌ Error in BalanceExtractService update:", error);
+    }
   };
 }
 
-const getNFTTimestamp = async (nftCosts: NFTCosts[], envConfig: ENVConfig) => {
-  const skyNode: SkyMainNodeJS = getSkyNode();
-
-  const serverCostCalculator = getServerCostCalculator(
-    envConfig.env.SERVER_COST_CONTRACT_ADDRESS,
-    skyNode.contractService.signer
-  );
-
-  const response = await skyNode.contractService.callContractRead<
-    BigInt[],
-    number[]
-  >(
-    serverCostCalculator.getLastUpdateTime(
-      nftCosts.map((nftCosts) => nftCosts.accountNFT)
-    ),
-    (res) => res.map((r) => Number(r))
-  );
-
-  return response;
-};
-
-const addCostToContract = async (
-  NFTCosts: NFTCosts[],
-  envConfig: ENVConfig
-): Promise<APICallReturn<any>> => {
-  const skyNode: SkyMainNodeJS = getSkyNode();
-
-  const serverCostCalculator = getServerCostCalculator(
-    envConfig.env.SERVER_COST_CONTRACT_ADDRESS,
-    skyNode.contractService.signer
-  );
-
-  const contractInput = NFTCosts.map((nftCosts) => ({
-    accountNFT: nftCosts.accountNFT,
-    cost: nftCosts.costs,
-  }));
-
-  const response = await skyNode.contractService.callContractWrite(
-    serverCostCalculator.setNFTCosts(contractInput, true)
-  );
-
-  return response;
-};
-
-const updateBalanceInContract = async (
-  accountNFT: AccountNFT,
-  envConfig: ENVConfig
-): Promise<APICallReturn<any>> => {
-  const skyNode = getSkyNode();
-  const subnetID = envConfig.env.SUBNET_ID || "";
-
-  const resp = await skyNode.contractService.callContractWrite(
-    skyNode.contractService.BalanceSettler.payNormal(
-      skyNode.contractService.selectedAccount,
-      accountNFT,
-      subnetID
-    )
-  );
-
-  return resp;
-};
