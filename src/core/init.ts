@@ -159,6 +159,12 @@ export const initAIAccessPoint = async (
       }
     });
 
+    // Initialize all database tables using centralized migration BEFORE creating services
+    const migration = new DatabaseMigration(pool);
+    const fractionalTableSchemas = getFractionalTableSchemas();
+    await migration.migrateTables(fractionalTableSchemas);
+
+    // Now create the balance service after tables exist
     const balanceRunMain = new BalanceRunMain(env, 60 * 1000, skyNodeParam, pool);
 
     // No longer need to get contract address from old system
@@ -198,10 +204,6 @@ export const initAIAccessPoint = async (
       console.log("✅ Data storage service initialized without custom validation");
     }
 
-    // Initialize all database tables using centralized migration
-    const migration = new DatabaseMigration(pool);
-    const fractionalTableSchemas = getFractionalTableSchemas();
-    await migration.migrateTables(fractionalTableSchemas);
 
     // Handler function that wraps runNaturalFunction with ResponseHandler
     const handleRequest = async (req: Request, res: Response, next: NextFunction) => {
