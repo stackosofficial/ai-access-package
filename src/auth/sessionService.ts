@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 export interface SessionTokenData {
   apiKeyId: string;
@@ -71,7 +71,7 @@ export class SessionService {
       agentCollection,
       issuedAt: now,
       expiresAt,
-      sessionId: uuidv4()
+      sessionId: randomUUID()
     };
 
     // Use deterministic secret for cross-service compatibility
