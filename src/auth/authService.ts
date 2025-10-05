@@ -17,13 +17,26 @@ export abstract class AuthService {
     this.backendId = process.env.BACKEND_ID || 'default';
   }
 
+  // Helper method to normalize agentCollection for consistent JSON serialization
+  private normalizeAgentCollection(agentCollection: any): string | null {
+    if (!agentCollection) return null;
+    
+    // Create a normalized version with sorted keys for consistent JSON stringification
+    const sortedKeys = Object.keys(agentCollection).sort();
+    const normalizedAgentCollection: any = {};
+    sortedKeys.forEach(key => {
+      normalizedAgentCollection[key] = agentCollection[key];
+    });
+    return JSON.stringify(normalizedAgentCollection);
+  }
+
   // Core auth operations
   async saveAuth(req: any, authData: any): Promise<void> {
     try {
       const userAddress = req.body.walletAddress;
       const nftId = req.body.accountNFT.nftID;
       const agentCollection = req?.body?.agentCollection || null;
-      const agentCollectionJson = agentCollection ? JSON.stringify(agentCollection) : null;
+      const agentCollectionJson = this.normalizeAgentCollection(agentCollection);
       
       // Check if a record exists with the exact same parameters
       const existingRecord = await this.pool.query(
@@ -57,7 +70,7 @@ export abstract class AuthService {
       const userAddress = req.body.walletAddress;
       const nftId = req.body.accountNFT.nftID;
       const agentCollection = req?.body?.agentCollection || null;
-      const agentCollectionJson = agentCollection ? JSON.stringify(agentCollection) : null;
+      const agentCollectionJson = this.normalizeAgentCollection(agentCollection);
       
       await this.pool.query(
         'DELETE FROM auth_data WHERE user_address = $1 AND nft_id = $2 AND backend_id = $3 AND (agent_collection IS NOT DISTINCT FROM $4)',
@@ -74,12 +87,16 @@ export abstract class AuthService {
       const userAddress = req.body.walletAddress;
       const nftId = req.body.accountNFT.nftID;
       const agentCollection = req?.body?.agentCollection || null;
-      const agentCollectionJson = agentCollection ? JSON.stringify(agentCollection) : null;
+      const agentCollectionJson = this.normalizeAgentCollection(agentCollection);
+      
+      console.log(`🔍 getAuth - Looking for auth with userAddress: ${userAddress}, nftId: ${nftId}, backendId: ${this.backendId}, agentCollection: ${agentCollectionJson}`);
       
       const result = await this.pool.query(
         'SELECT auth_data FROM auth_data WHERE user_address = $1 AND nft_id = $2 AND backend_id = $3 AND (agent_collection IS NOT DISTINCT FROM $4)',
         [userAddress, nftId, this.backendId, agentCollectionJson]
       );
+      
+      console.log(`🔍 getAuth - Found ${result.rows.length} matching records`);
       return result.rows.length > 0 ? result.rows[0].auth_data : null;
     } catch (error) {
       console.error('Error getting auth data:', error);
