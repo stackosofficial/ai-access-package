@@ -7,6 +7,8 @@ export interface ENVDefinition {
   SUBNET_ID: string;
   POSTGRES_URL: string;
   SERVER_COST_CONTRACT_ADDRESS: string;
+  // Session configuration (optional)
+  SESSION_EXPIRATION_HOURS?: string; // No SESSION_SECRET_KEY needed - uses deterministic generation
 }
 
 export interface NFTCosts {

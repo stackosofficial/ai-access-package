@@ -73,7 +73,7 @@ export const logApiUsage = async (apiKeyId: string, endpoint: string = '/natural
 };
 
 // Master validation function
-export const masterValidation = async (req: any, skyNode: SkyMainNodeJS, pool: Pool): Promise<{ isValid: boolean; error?: string; walletAddress?: string; accountNFT?: { collectionID: string; nftID: string }; agentCollection?: { agentCollection: string; agentID?: string } }> => {
+export const masterValidation = async (req: any, skyNode: SkyMainNodeJS, pool: Pool): Promise<{ isValid: boolean; error?: string; walletAddress?: string; accountNFT?: { collectionID: string; nftID: string }; agentCollection?: { agentAddress: string; agentID?: string } }> => {
   try {
     let walletAddress: string | undefined;
     let accountNFT: { collectionID: string; nftID: string } | undefined;
@@ -207,7 +207,7 @@ export const masterValidation = async (req: any, skyNode: SkyMainNodeJS, pool: P
     }
 
     // Step 3: Validate agent collection if provided
-    let agentCollection: { agentCollection: string; agentID?: string } | undefined;
+    let agentCollection: { agentAddress: string; agentID?: string } | undefined;
 
     if (req.body && req.body.agentCollection) {
       if (!walletAddress) {
