@@ -1,6 +1,6 @@
 {
   "name": "@decloudlabs/sky-ai-accesspoint",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "AI Access Point API with improved Supabase compatibility",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
