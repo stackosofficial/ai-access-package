@@ -4,14 +4,26 @@ declare module "express-serve-static-core" {
       apiKey: string;
       type: string;
     };
+    isSessionRequest?: boolean;
   }
 }
 
 import { Request, Response, NextFunction } from "express";
 import "../types/types"; // Import types for global declarations
+import { sessionService } from '../auth/sessionService';
 
 export const parseAuth = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    // Check for session token first
+    const sessionToken = sessionService.extractSessionTokenFromRequest(req);
+    
+    if (sessionToken) {
+      // This is a session-based request - mark it for session validation
+      req.isSessionRequest = true;
+      console.log('🔑 Session token detected, will use session validation');
+      return next();
+    }
+
     // Set auth info if API key is present
     const apiKey = req.headers["x-api-key"];
 
