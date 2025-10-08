@@ -32,18 +32,18 @@ export const checkBalance = async (
     // Initialize fractional payment service
     const paymentService = new SkynetFractionalPaymentService(envConfig);
 
-    // Check user's deposit balance in the fractional escrow contract
-    const balanceResponse = await paymentService.getUserDepositBalance(walletAddress);
+    // Check user's total balance (deposits + credits) in the fractional escrow contract
+    const totalBalanceResponse = await paymentService.getUserTotalBalance(walletAddress);
     
-    if (!balanceResponse.success) {
-      console.log(`❌ Failed to get user deposit balance for ${walletAddress}:`, balanceResponse.data);
+    if (!totalBalanceResponse.success) {
+      console.log(`❌ Failed to get user total balance for ${walletAddress}:`, totalBalanceResponse.data);
       return res.json({
         success: false,
         data: new Error("Failed to check user balance").toString(),
       });
     }
 
-    const userBalance = balanceResponse.data;
+    const { depositBalance, creditBalance, totalBalance } = totalBalanceResponse.data;
 
     // Get total pending costs from database for this user across all subnets
     const pool = new Pool({
@@ -60,27 +60,29 @@ export const checkBalance = async (
     const pendingCostsResult = await pool.query(pendingCostsQuery, [apiKeyId]);
     const totalPendingCosts = BigInt(pendingCostsResult.rows[0].total_pending || "0");
 
-    // Calculate available balance: contractBalance - databaseCosts
-    const availableBalance = userBalance - totalPendingCosts;
+    // Calculate available balance: (depositBalance + creditBalance) - databaseCosts
+    const availableBalance = totalBalance - totalPendingCosts;
 
     // Check minimum balance requirement
     const minimumBalance = BigInt(process.env.MINIMUM_BALANCE || "0");
     if (minimumBalance > 0) {
       if (availableBalance < minimumBalance) {
-        console.log(`❌ Insufficient available balance: User ${walletAddress} has ${availableBalance} wei available (contract: ${userBalance} wei, pending: ${totalPendingCosts} wei) but minimum required is ${minimumBalance}`);
+        console.log(`❌ Insufficient available balance: User ${walletAddress} has ${availableBalance} wei available (deposits: ${depositBalance} wei, credits: ${creditBalance} wei, pending: ${totalPendingCosts} wei) but minimum required is ${minimumBalance}`);
         return res.json({
           success: false,
           data: new Error("Insufficient available balance").toString(),
         });
       }
 
-      console.log(`✅ Balance check passed: User ${walletAddress} has ${availableBalance} wei available (contract: ${userBalance} wei, pending: ${totalPendingCosts} wei) (minimum required: ${minimumBalance})`);
+      console.log(`✅ Balance check passed: User ${walletAddress} has ${availableBalance} wei available (deposits: ${depositBalance} wei, credits: ${creditBalance} wei, pending: ${totalPendingCosts} wei) (minimum required: ${minimumBalance})`);
     } else {
-      console.log(`ℹ️ Balance check skipped: MINIMUM_BALANCE is 0 or not set. User ${walletAddress} has ${availableBalance} wei available (contract: ${userBalance} wei, pending: ${totalPendingCosts} wei)`);
+      console.log(`ℹ️ Balance check skipped: MINIMUM_BALANCE is 0 or not set. User ${walletAddress} has ${availableBalance} wei available (deposits: ${depositBalance} wei, credits: ${creditBalance} wei, pending: ${totalPendingCosts} wei)`);
     }
 
     // Add balance information to request for potential use in route handlers
-    req.body.userDepositBalance = userBalance.toString();
+    req.body.userDepositBalance = depositBalance.toString();
+    req.body.userCreditBalance = creditBalance.toString();
+    req.body.userTotalBalance = totalBalance.toString();
     req.body.availableBalance = availableBalance.toString();
     req.body.pendingCosts = totalPendingCosts.toString();
 

@@ -71,6 +71,80 @@ export default class SkynetFractionalPaymentService {
   }
 
   /**
+   * Get user's credit balance from the escrow contract
+   * @param userAddress - The user's wallet address
+   * @returns Promise<APICallReturn<bigint>> - User's credit balance in wei
+   */
+  async getUserCreditBalance(userAddress: string): Promise<APICallReturn<bigint>> {
+    try {
+      const skyNode = getSkyNode();
+      if (!skyNode) {
+        return {
+          success: false,
+          data: new Error("SkyNode not initialized")
+        };
+      }
+
+      const balance = await skyNode.contractService.callContractRead<bigint, bigint>(
+        this.contract.getUserCreditBalance(userAddress),
+        (res) => res
+      );
+
+      return balance;
+    } catch (error) {
+      console.error("❌ Error getting user credit balance:", error);
+      return {
+        success: false,
+        data: error as Error
+      };
+    }
+  }
+
+  /**
+   * Get user's total balance (deposits + credits)
+   * @param userAddress - The user's wallet address
+   * @returns Promise<APICallReturn<{depositBalance: bigint, creditBalance: bigint, totalBalance: bigint}>>
+   */
+  async getUserTotalBalance(userAddress: string): Promise<APICallReturn<{depositBalance: bigint, creditBalance: bigint, totalBalance: bigint}>> {
+    try {
+      const depositResponse = await this.getUserDepositBalance(userAddress);
+      if (!depositResponse.success) {
+        return {
+          success: false,
+          data: new Error("Failed to get deposit balance")
+        };
+      }
+
+      const creditResponse = await this.getUserCreditBalance(userAddress);
+      if (!creditResponse.success) {
+        return {
+          success: false,
+          data: new Error("Failed to get credit balance")
+        };
+      }
+
+      const depositBalance = depositResponse.data;
+      const creditBalance = creditResponse.data;
+      const totalBalance = depositBalance + creditBalance;
+
+      return {
+        success: true,
+        data: {
+          depositBalance,
+          creditBalance,
+          totalBalance
+        }
+      };
+    } catch (error) {
+      console.error("❌ Error getting user total balance:", error);
+      return {
+        success: false,
+        data: error as Error
+      };
+    }
+  }
+
+  /**
    * Charge user for compute services (backend only)
    * @param userAddress - The user's wallet address to charge
    * @param amount - Amount to charge in wei
@@ -296,6 +370,35 @@ export default class SkynetFractionalPaymentService {
   }
 
   /**
+   * Get current credit manager address
+   * @returns Promise<APICallReturn<string>> - Credit manager address
+   */
+  async getCreditManager(): Promise<APICallReturn<string>> {
+    try {
+      const skyNode = getSkyNode();
+      if (!skyNode) {
+        return {
+          success: false,
+          data: new Error("SkyNode not initialized")
+        };
+      }
+
+      const creditManager = await skyNode.contractService.callContractRead<string, string>(
+        this.contract.creditManager(),
+        (res) => res
+      );
+
+      return creditManager;
+    } catch (error) {
+      console.error("❌ Error getting credit manager:", error);
+      return {
+        success: false,
+        data: error as Error
+      };
+    }
+  }
+
+  /**
    * Check if the current signer is the backend wallet
    * @returns Promise<APICallReturn<boolean>> - True if current signer is backend wallet
    */
@@ -334,15 +437,15 @@ export default class SkynetFractionalPaymentService {
   }
 
   /**
-   * Check if user has sufficient balance for a given amount
+   * Check if user has sufficient balance for a given amount (deposits + credits)
    * @param userAddress - The user's wallet address
    * @param requiredAmount - Required amount in wei
    * @returns Promise<APICallReturn<boolean>> - True if user has sufficient balance
    */
   async hasSufficientBalance(userAddress: string, requiredAmount: string): Promise<APICallReturn<boolean>> {
     try {
-      const balanceResponse = await this.getUserDepositBalance(userAddress);
-      if (!balanceResponse.success) {
+      const totalBalanceResponse = await this.getUserTotalBalance(userAddress);
+      if (!totalBalanceResponse.success) {
         return {
           success: false,
           data: new Error("Failed to check user balance")
@@ -350,7 +453,7 @@ export default class SkynetFractionalPaymentService {
       }
 
       const requiredAmountBigInt = BigInt(requiredAmount);
-      const hasSufficient = balanceResponse.data >= requiredAmountBigInt;
+      const hasSufficient = totalBalanceResponse.data.totalBalance >= requiredAmountBigInt;
 
       return {
         success: true,
