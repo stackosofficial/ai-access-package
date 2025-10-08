@@ -129,22 +129,48 @@ export abstract class AuthService {
 
   async checkAuthStatus(req: any): Promise<boolean> {
     try {
+      console.log('🔍 checkAuthStatus - Starting auth status check');
       const authData = await this.getAuth(req);
-      if (!authData) return false;
-
-      // Check if token is expired (if it has expires_at field)
-      if (authData.expires_at && Date.now() > authData.expires_at) {
+      
+      if (!authData) {
+        console.log('❌ checkAuthStatus - No auth data found, returning false');
         return false;
       }
 
-      // Check if we have valid tokens
-      if (authData.access_token && authData.refresh_token) {
+      console.log('✅ checkAuthStatus - Auth data found:', JSON.stringify(authData, null, 2));
+
+      // Check if we have a refresh token (long-lived, ~6 months)
+      if (authData.refresh_token) {
+        console.log('✅ checkAuthStatus - Refresh token exists (long-lived), auth is valid, returning true');
         return true;
       }
 
+      console.log('ℹ️ checkAuthStatus - No refresh token found, checking access token');
+
+      // If no refresh token, check access token with expiration
+      if (authData.access_token) {
+        // Check if token is expired (if it has expires_at field)
+        if (authData.expires_at) {
+          const now = Date.now();
+          console.log(`🕐 checkAuthStatus - Checking expiration: expires_at=${authData.expires_at}, now=${now}, expired=${now > authData.expires_at}`);
+          
+          if (now > authData.expires_at) {
+            console.log('❌ checkAuthStatus - Access token expired, returning false');
+            return false;
+          }
+          
+          console.log('✅ checkAuthStatus - Access token valid and not expired, returning true');
+          return true;
+        } else {
+          console.log('✅ checkAuthStatus - Access token exists (no expiration check), returning true');
+          return true;
+        }
+      }
+
+      console.log('❌ checkAuthStatus - No valid tokens found (neither refresh_token nor access_token), returning false');
       return false;
     } catch (error) {
-      console.error('Error checking auth status:', error);
+      console.error('❌ checkAuthStatus - Error checking auth status:', error);
       throw error;
     }
   }
