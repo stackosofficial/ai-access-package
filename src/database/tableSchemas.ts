@@ -162,17 +162,34 @@ export function getAuthTableSchemas(): TableSchema[] {
           user_address TEXT NOT NULL,
           nft_id TEXT NOT NULL,
           backend_id TEXT NOT NULL DEFAULT 'default',
-          agent_collection JSONB,
+          agent_collection_address TEXT,
+          agent_collection_id INTEGER,
           auth_data JSONB,
           created_at TIMESTAMPTZ DEFAULT NOW(),
           updated_at TIMESTAMPTZ DEFAULT NOW()
         );
+        
+        CREATE INDEX IF NOT EXISTS idx_auth_data_user_nft_backend 
+        ON auth_data(user_address, nft_id, backend_id);
+        
+        CREATE INDEX IF NOT EXISTS idx_auth_data_agent_collection_address 
+        ON auth_data(agent_collection_address) WHERE agent_collection_address IS NOT NULL;
+        
+        CREATE INDEX IF NOT EXISTS idx_auth_data_agent_collection_id 
+        ON auth_data(agent_collection_id) WHERE agent_collection_id IS NOT NULL;
+        
+        CREATE INDEX IF NOT EXISTS idx_auth_data_user_address_lower 
+        ON auth_data(LOWER(user_address));
+        
+        CREATE INDEX IF NOT EXISTS idx_auth_data_agent_address_id 
+        ON auth_data(agent_collection_address, agent_collection_id) WHERE agent_collection_address IS NOT NULL;
       `,
       requiredColumns: [
         { name: 'user_address', type: 'TEXT', nullable: false },
         { name: 'nft_id', type: 'TEXT', nullable: false },
         { name: 'backend_id', type: 'TEXT', nullable: false, defaultValue: "'default'" },
-        { name: 'agent_collection', type: 'JSONB', nullable: true },
+        { name: 'agent_collection_address', type: 'TEXT', nullable: true },
+        { name: 'agent_collection_id', type: 'INTEGER', nullable: true },
         { name: 'auth_data', type: 'JSONB', nullable: true },
         { name: 'created_at', type: 'TIMESTAMPTZ', defaultValue: 'NOW()' },
         { name: 'updated_at', type: 'TIMESTAMPTZ', defaultValue: 'NOW()' }
