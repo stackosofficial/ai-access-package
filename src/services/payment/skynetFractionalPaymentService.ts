@@ -22,7 +22,7 @@ export default class SkynetFractionalPaymentService {
   private contract: ethers.Contract;
 
   // Hardcoded contract address for SkynetFractionalEscrow
-  private static readonly CONTRACT_ADDRESS = "0x8c75166569A4c6Df0f68C8Cbd2BfE5993653e926";
+  private static readonly CONTRACT_ADDRESS = "0x84D7C1aD5ec92d22A898E8a974fAc9C09985297a";
 
   constructor(envConfig: ENVConfig) {
     this.envConfig = envConfig;
