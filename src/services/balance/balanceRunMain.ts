@@ -7,6 +7,7 @@ import ENVConfig from "../../core/envConfig";
 import { ethers } from "ethers";
 import axios from "axios";
 import SkyMainNodeJS from "@decloudlabs/skynet/lib/services/SkyMainNodeJS";
+import { validatePayload, validateStructuredOutput, AIModelCallParams } from "./aiModelValidation";
 
 export default class BalanceRunMain {
   RUN_DURATION: number;
@@ -102,14 +103,27 @@ export default class BalanceRunMain {
     return { success: true, data: true };
   };
 
+  /**
+   * Call AI Model with validation
+   * @param params - AI model call parameters (typed for autocomplete and validation)
+   * @param accountNFT - Account NFT for authentication
+   * @returns Promise<any> - AI model response
+   * 
+   * @example
+   * ```typescript
+   * const response = await balanceRunMain.callAIModel({
+   *   prompt: "What is AI?",
+   *   model: "qwen/qwen3-14b",  // Optional, defaults to "qwen/qwen3-14b"
+   *   system_prompt: "You are a helpful assistant",
+   *   temperature: 0.7,
+   *   response_type: "json_object",
+   *   max_tokens: 1000
+   * }, accountNFT);
+   * ```
+   */
   async callAIModel(
-    prompt: string,
-    accountNFT: AccountNFT,
-    system_prompt?: string,
-    model: string[] = ["qwen/qwen3-14b"],
-    temperature?: number,
-    response_type?: string,
-    response_schema?: JsonSchema,
+    params: AIModelCallParams,
+    accountNFT: AccountNFT
   ): Promise<any> {
     const skyNode = this.skyNode;
     if(!skyNode){
@@ -128,32 +142,40 @@ export default class BalanceRunMain {
       };
     }
 
-    // Prepare request data with optional parameters
+    // Prepare request data with validated parameters
     const requestData: any = {
-      prompt,
+      ...params,
       userAuthPayload: userAuthPayload.data,
       accountNFT,
-      model,
+      model: params.model || "Qwen/Qwen3-Next-80B-A3B-Thinking",
       response_format: 'json_object'
     };
 
-    // Add optional parameters if provided
-    if (system_prompt) {
-      requestData.system_prompt = system_prompt;
+    // Validate the request payload
+    const validation = validatePayload(requestData);
+    if (!validation.success) {
+      console.error('❌ AI Model request validation failed:', validation.error);
+      return {
+        success: false,
+        data: new Error(`Validation failed: ${validation.error}`),
+      };
     }
-    if (temperature !== undefined) {
-      requestData.temperature = temperature;
+
+    // Validate structured output if applicable
+    const structuredValidation = validateStructuredOutput(requestData);
+    if (!structuredValidation.success) {
+      console.error('❌ Structured output validation failed:', structuredValidation.error);
+      return {
+        success: false,
+        data: new Error(`Structured output validation failed: ${structuredValidation.error}`),
+      };
     }
-    if (response_type) {
-      requestData.response_type = response_type;
-    }
-    if (response_schema) {
-      requestData.response_schema = response_schema;
-    }
+
+    console.log('✅ AI Model request validated successfully');
 
     const response = await axios({
       method: "POST",
-      url: `https://openrouter-c0n623.stackos.io/natural-request`,
+      url: `http://localhost:3000/natural-request`,
       data: requestData,
       headers: {
         "Content-Type": "application/json",
