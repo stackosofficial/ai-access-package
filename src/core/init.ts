@@ -303,6 +303,80 @@ export const initAIAccessPoint = async (
       );
     }
 
+    // Get user balance endpoint (shows on-chain balance and pending costs)
+    app.post("/get-balance", 
+      sessionMiddleware,
+      parseAuth,
+      async (req: Request, res: Response, next: NextFunction) => {
+        await protect(req, res, next, skyNodeParam, pool);
+      },
+      async (req: Request, res: Response, next: NextFunction) => {
+        try {
+          const walletAddress = req.body.walletAddress;
+          
+          if (!walletAddress) {
+            return res.status(400).json({
+              success: false,
+              error: "walletAddress is required"
+            });
+          }
+
+          // Initialize fractional payment service
+          const paymentService = new SkynetFractionalPaymentService();
+
+          // Get on-chain balance
+          const totalBalanceResponse = await paymentService.getUserTotalBalance(walletAddress);
+          
+          if (!totalBalanceResponse.success) {
+            return res.status(500).json({
+              success: false,
+              error: "Failed to get user balance from contract"
+            });
+          }
+
+          const { depositBalance, creditBalance, totalBalance } = totalBalanceResponse.data;
+
+          // Get pending costs from database
+          const walletAddressLower = walletAddress.toLowerCase();
+          const pendingCostsResult = await pool.query(
+            'SELECT COALESCE(SUM(CAST(amount AS BIGINT)), 0) as total_pending FROM fractional_payments WHERE wallet_address = $1',
+            [walletAddressLower]
+          );
+          const totalPendingCosts = BigInt(pendingCostsResult.rows[0].total_pending || "0");
+
+          // Calculate available balance
+          const availableBalance = totalBalance - totalPendingCosts;
+
+          // Convert to sUSD for display
+          const WEI_TO_SUSD = BigInt(10 ** 18);
+          
+          res.json({
+            success: true,
+            data: {
+              walletAddress,
+              // Balances in wei
+              depositBalanceWei: depositBalance.toString(),
+              creditBalanceWei: creditBalance.toString(),
+              totalBalanceWei: totalBalance.toString(),
+              pendingCostsWei: totalPendingCosts.toString(),
+              availableBalanceWei: availableBalance.toString(),
+              // Balances in sUSD (formatted)
+              depositBalanceSUSD: (Number(depositBalance) / Number(WEI_TO_SUSD)).toFixed(6),
+              creditBalanceSUSD: (Number(creditBalance) / Number(WEI_TO_SUSD)).toFixed(6),
+              totalBalanceSUSD: (Number(totalBalance) / Number(WEI_TO_SUSD)).toFixed(6),
+              pendingCostsSUSD: (Number(totalPendingCosts) / Number(WEI_TO_SUSD)).toFixed(6),
+              availableBalanceSUSD: (Number(availableBalance) / Number(WEI_TO_SUSD)).toFixed(6)
+            }
+          });
+        } catch (error: any) {
+          console.error("❌ Error in get-balance handler:", error);
+          res.status(500).json({
+            success: false,
+            error: error.message || "Internal server error"
+          });
+        }
+      });
+
     // Add auth-link endpoint only if auth service is configured
     // Note: This endpoint requires protect (to extract wallet/NFT) but no balance check
     if (authService) {
