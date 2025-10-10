@@ -1,13 +1,13 @@
 import SkyMainNodeJS from "@decloudlabs/skynet/lib/services/SkyMainNodeJS";
 import BalanceRunMain from "../services/balance/balanceRunMain";
-import { ENVDefinition, NFTCosts, ResponseHandler, ApiKeyConfig } from "../types/types";
+import { ENVDefinition, ResponseHandler, ApiKeyConfig } from "../types/types";
 import { APICallReturn } from "@decloudlabs/skynet/lib/types/types";
 import { checkBalance } from "../middleware/checkBalance";
 import { protect } from "../middleware/auth";
 import { parseAuth } from "../middleware/parseAuth";
 import { validateSession } from "../middleware/validateSession";
 import { generateApiKey, revokeApiKey } from "../auth/apiKeyService";
-import { AuthService, createAuthService } from "../auth/authService";
+import { AuthService } from "../auth/authService";
 import { DatabaseMigration } from "../database/databaseMigration";
 import { getFractionalTableSchemas } from "../database/fractionalTableSchemas";
 import { DataStorageService } from "../services/dataStorage/dataStorageService";
