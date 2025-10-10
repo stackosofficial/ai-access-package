@@ -67,7 +67,6 @@ export const parseAuth = async (req: Request, res: Response, next: NextFunction)
     // Parse userAuthPayload if provided
     if (userAuthPayloadRaw) {
       let userAuthPayload;
-
       if (typeof userAuthPayloadRaw === 'string') {
         try {
           userAuthPayload = JSON.parse(userAuthPayloadRaw);
@@ -85,14 +84,11 @@ export const parseAuth = async (req: Request, res: Response, next: NextFunction)
           data: "userAuthPayload must be a JSON object or string",
         });
       }
-
       req.body.userAuthPayload = userAuthPayload;
     }
-
     // Parse accountNFT if provided
     if (accountNFTRaw) {
       let accountNFT;
-
       if (typeof accountNFTRaw === 'string') {
         try {
           accountNFT = JSON.parse(accountNFTRaw);
@@ -110,11 +106,8 @@ export const parseAuth = async (req: Request, res: Response, next: NextFunction)
           data: "accountNFT must be a JSON object or string",
         });
       }
-
       req.body.accountNFT = accountNFT;
     }
-
-
 
     next();
   } catch (error: any) {

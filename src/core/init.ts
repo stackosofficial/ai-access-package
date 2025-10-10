@@ -6,6 +6,7 @@ import { checkBalance } from "../middleware/checkBalance";
 import { protect } from "../middleware/auth";
 import { parseAuth } from "../middleware/parseAuth";
 import { validateSession } from "../middleware/validateSession";
+import { sessionMiddleware } from "../middleware/sessionMiddleware";
 import { generateApiKey, revokeApiKey } from "../auth/apiKeyService";
 import { AuthService } from "../auth/authService";
 import { DatabaseMigration } from "../database/databaseMigration";
@@ -272,69 +273,47 @@ export const initAIAccessPoint = async (
       }
     };
 
-    // Smart routing middleware - chooses between session and API key validation
-    const smartAuthMiddleware = async (req: Request, res: Response, next: NextFunction) => {
-      if (req.isSessionRequest) {
-        // Use session validation (fast path)
-        console.log('🚀 Using session validation (fast path)');
-        await validateSession(req, res, next);
-      } else {
-        // Use API key validation (full validation path)
-        console.log('🔐 Using API key validation (full path)');
-        await protect(req, res, next, skyNodeParam, pool);
-      }
-    };
-
     // Setup routes
     if (upload) {
       app.post(
         "/natural-request",
         upload.array("files"),
+        sessionMiddleware,
         parseAuth,
-        smartAuthMiddleware,
         async (req: Request, res: Response, next: NextFunction) => {
-          // Only run balance check for API key requests (not session requests)
-          if (!req.isSessionRequest) {
-            await checkBalance(req, res, next, pool);
-          } else {
-            next();
-          }
+          await protect(req, res, next, skyNodeParam, pool);
         },
-        async (req: Request, res: Response, next: NextFunction) =>
-          await checkBalance(req, res, next, pool),
+        async (req: Request, res: Response, next: NextFunction) => {
+          await checkBalance(req, res, next, pool);
+        },
         handleRequest
       );
     } else {
       app.post(
         "/natural-request",
+        sessionMiddleware, 
         parseAuth,
-        smartAuthMiddleware,
         async (req: Request, res: Response, next: NextFunction) => {
-          // Only run balance check for API key requests (not session requests)
-          if (!req.isSessionRequest) {
-            await checkBalance(req, res, next, pool);
-          } else {
-            next();
-          }
+          await protect(req, res, next, skyNodeParam, pool);
         },
-        async (req: Request, res: Response, next: NextFunction) =>
-          await checkBalance(req, res, next, pool),
+        async (req: Request, res: Response, next: NextFunction) => {
+          await checkBalance(req, res, next, pool);  // 4. Check balance
+        },
         handleRequest
       );
     }
 
     // Add auth-link endpoint only if auth service is configured
+    // Note: This endpoint requires protect (to extract wallet/NFT) but no balance check
     if (authService) {
       app.post("/auth-link", parseAuth,
         async (req: Request, res: Response, next: NextFunction) => {
           await protect(req, res, next, skyNodeParam, pool);
         },
-        async (req: Request, res: Response, next: NextFunction) =>
-          await checkBalance(req, res, next, pool),
         async (req: Request, res: Response, next: NextFunction) => {
           try {
             const userAddress = req.body.walletAddress;
-            const nftId = req.body.accountNFT.nftID;
+            const nftId = req.body.accountNFT?.nftID;
 
             if (!userAddress || !nftId) {
               return res.status(400).json({
@@ -365,8 +344,6 @@ export const initAIAccessPoint = async (
         async (req: Request, res: Response, next: NextFunction) => {
           await protect(req, res, next, skyNodeParam, pool);
         },
-        async (req: Request, res: Response, next: NextFunction) =>
-          await checkBalance(req, res, next, pool),
         async (req: Request, res: Response, next: NextFunction) => {
           try {
             const userAddress = req.body.walletAddress;
@@ -401,8 +378,6 @@ export const initAIAccessPoint = async (
       async (req: Request, res: Response, next: NextFunction) => {
         await protect(req, res, next, skyNodeParam, pool);
       },
-      async (req: Request, res: Response, next: NextFunction) =>
-        await checkBalance(req, res, next, pool),
       async (req: Request, res: Response, next: NextFunction) => {
         try {
           const result = await generateApiKey(req, pool);
@@ -468,8 +443,6 @@ export const initAIAccessPoint = async (
     app.post("/revoke-api-key", parseAuth, async (req: Request, res: Response, next: NextFunction) => {
       await protect(req, res, next, skyNodeParam, pool);
     },
-      async (req: Request, res: Response, next: NextFunction) =>
-        await checkBalance(req, res, next, pool),
       async (req: Request, res: Response, next: NextFunction) => {
         try {
           const walletAddress = req.body.walletAddress;
@@ -516,8 +489,6 @@ export const initAIAccessPoint = async (
       app.post("/revoke-auth", parseAuth, async (req: Request, res: Response, next: NextFunction) => {
         await protect(req, res, next, skyNodeParam, pool);
       },
-        async (req: Request, res: Response, next: NextFunction) =>
-          await checkBalance(req, res, next, pool),
         async (req: Request, res: Response, next: NextFunction) => {
           try {
             const userAddress = req.body.walletAddress;
@@ -660,54 +631,7 @@ export const initAIAccessPoint = async (
           });
         }
       });
-
-    // Fetch data endpoint
-    app.post("/fetch-data", parseAuth, async (req: Request, res: Response, next: NextFunction) => {
-      await protect(req, res, next, skyNodeParam, pool);
-    },
-      async (req: Request, res: Response, next: NextFunction) =>
-        await checkBalance(req, res, next, pool),
-      async (req: Request, res: Response, next: NextFunction) => {
-        try {
-          const { referenceId } = req.body;
-          const collectionId = req.body.accountNFT.collectionID;
-          const nftId = req.body.accountNFT.nftID;
-
-          if (!referenceId) {
-            return res.status(400).json({
-              success: false,
-              error: "referenceId is required in request body"
-            });
-          }
-
-          const result = await dataStorageService!.fetchData(
-            collectionId,
-            nftId,
-            referenceId
-          );
-
-          if (!result.success) {
-            return res.status(404).json({
-              success: false,
-              error: result.error
-            });
-          }
-
-          res.json({
-            success: true,
-            data: result.data
-          });
-        } catch (error: any) {
-          console.error("❌ Error in fetch-data handler:", error);
-          res.status(500).json({
-            success: false,
-            error: error.message || "Internal server error"
-          });
-        }
-      });
-
-
-
+      
     // Add global error handling middleware
     app.use((error: any, req: Request, res: Response, next: NextFunction) => {
       console.error("❌ [GLOBAL ERROR HANDLER] Unhandled error:", error);

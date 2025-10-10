@@ -1,7 +1,5 @@
 import { Request, Response, NextFunction } from "express";
 import SkynetFractionalPaymentService from "../services/payment/skynetFractionalPaymentService";
-import SkyMainNodeJS from "@decloudlabs/skynet/lib/services/SkyMainNodeJS";
-import ENVConfig from "../core/envConfig";
 import { Pool } from "pg";
 
 export const checkBalance = async (
@@ -11,11 +9,9 @@ export const checkBalance = async (
   pool: Pool
 ) => {
   try {
-    // Get values already set by protect middleware (no need for another database call)
-    const apiKeyId = (req as any).apiKeyId;
     const walletAddress = req.body.walletAddress;
 
-    if (!apiKeyId || !walletAddress) {
+    if (!walletAddress) {
       return res.status(401).json({
         success: false,
         error: "Authentication data not available"
