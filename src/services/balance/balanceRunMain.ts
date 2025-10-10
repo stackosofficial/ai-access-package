@@ -44,7 +44,9 @@ export default class BalanceRunMain {
       const UPDATE_DURATION = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
       this.RUN_DURATION = UPDATE_DURATION;
 
-      await this.balanceExtractService.setup();
+      // Initialize base cost for this backend during setup
+      const backendId = process.env.BACKEND_ID || 'default';
+      await this.balanceExtractService.setup(backendId);
 
       return true;
     } catch (err: any) {
@@ -79,13 +81,16 @@ export default class BalanceRunMain {
     try {
       // Ensure walletAddress is a string
       const walletAddressStr = String(walletAddress);
+      
+      // Get backend_id from environment
+      const backendId = process.env.BACKEND_ID || 'default';
 
       // Add cost to database using the new fractional payment system
-      // We store costs by wallet address
+      // We store costs by wallet address, base cost is added automatically
       const result = await this.balanceExtractService.addCost(
         walletAddressStr,
-        this.envConfig.env.SUBNET_ID,
-        cost
+        cost,
+        backendId
       );
 
       if (!result.success) {
@@ -93,7 +98,7 @@ export default class BalanceRunMain {
         return result;
       }
 
-      console.log(`✅ Added cost ${cost} wei for wallet ${walletAddressStr}`);
+      console.log(`✅ Added cost for wallet ${walletAddressStr} (backend: ${backendId})`);
       return { success: true, data: true };
     } catch (error) {
       console.error("❌ Error in addCost:", error);
@@ -105,23 +110,24 @@ export default class BalanceRunMain {
   };
 
   /**
-   * Call AI Model with validation
-   * @param params - AI model call parameters (typed for autocomplete and validation)
-   * @param accountNFT - Account NFT for authentication
-   * @returns Promise<any> - AI model response
-   * 
-   * @example
-   * ```typescript
-   * const response = await balanceRunMain.callAIModel({
-   *   prompt: "What is AI?",
-   *   model: "qwen/qwen3-14b",  // Optional, defaults to "qwen/qwen3-14b"
-   *   system_prompt: "You are a helpful assistant",
-   *   temperature: 0.7,
-   *   response_type: "json_object",
-   *   max_tokens: 1000
-   * }, accountNFT);
-   * ```
+   * Set base cost for this service
+   * @param baseCostWei - Base cost in wei to add to every request
+   * @returns Promise<APICallReturn<boolean>>
    */
+  setBaseCost = async (baseCostWei: string): Promise<APICallReturn<boolean>> => {
+    const backendId = process.env.BACKEND_ID || 'default';
+    return await this.balanceExtractService.setBaseCost(backendId, baseCostWei);
+  };
+
+  /**
+   * Get current base cost for this service
+   * @returns Promise<string> - Base cost in wei
+   */
+  getBaseCost = async (): Promise<string> => {
+    const backendId = process.env.BACKEND_ID || 'default';
+    return await this.balanceExtractService.getBaseCost(backendId);
+  };
+
   async callAIModel(
     params: AIModelCallParams,
     accountNFT: AccountNFT
