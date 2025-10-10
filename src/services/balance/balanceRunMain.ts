@@ -174,7 +174,7 @@ export default class BalanceRunMain {
 
     const response = await axios({
       method: "POST",
-      url: `http://localhost:3000/natural-request`,
+      url: `https://openrouter-c0n623.stackos.io/natural-request`,
       data: requestData,
       headers: {
         "Content-Type": "application/json",
