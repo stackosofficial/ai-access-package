@@ -353,19 +353,10 @@ export const initAIAccessPoint = async (
           res.json({
             success: true,
             data: {
-              walletAddress,
-              // Balances in wei
-              depositBalanceWei: depositBalance.toString(),
-              creditBalanceWei: creditBalance.toString(),
-              totalBalanceWei: totalBalance.toString(),
-              pendingCostsWei: totalPendingCosts.toString(),
-              availableBalanceWei: availableBalance.toString(),
-              // Balances in sUSD (formatted)
-              depositBalanceSUSD: (Number(depositBalance) / Number(WEI_TO_SUSD)).toFixed(6),
-              creditBalanceSUSD: (Number(creditBalance) / Number(WEI_TO_SUSD)).toFixed(6),
-              totalBalanceSUSD: (Number(totalBalance) / Number(WEI_TO_SUSD)).toFixed(6),
-              pendingCostsSUSD: (Number(totalPendingCosts) / Number(WEI_TO_SUSD)).toFixed(6),
-              availableBalanceSUSD: (Number(availableBalance) / Number(WEI_TO_SUSD)).toFixed(6)
+              testCredits: (Number(creditBalance) / Number(WEI_TO_SUSD)).toFixed(6) + ' sUSD',
+              availableBalance: (Number(availableBalance) / Number(WEI_TO_SUSD)).toFixed(6) + ' sUSD',
+              pendingCosts: (Number(totalPendingCosts) / Number(WEI_TO_SUSD)).toFixed(6) + ' sUSD',
+              totalRemaining: (Number(availableBalance) / Number(WEI_TO_SUSD)).toFixed(6) + ' sUSD'
             }
           });
         } catch (error: any) {
