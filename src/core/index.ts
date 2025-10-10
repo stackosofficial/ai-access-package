@@ -13,6 +13,9 @@ export type {
 
 export type { ServiceDetails } from '../database/serviceManagement';
 
+// Export AI Model validation types
+export type { AIModelCallParams } from '../services/balance/aiModelValidation';
+
 // Export initialization
 export { initAIAccessPoint, getAuthService } from './init';
 export type { AIAccessPointConfig } from './init';

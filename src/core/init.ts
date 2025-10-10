@@ -117,15 +117,7 @@ export class ResponseHandlerImpl implements ResponseHandler {
 
 // Enhanced BalanceRunMain type that includes automatic system prompt handling
 export interface EnhancedBalanceRunMain extends BalanceRunMain {
-  callAIModel: (
-    prompt: string,
-    accountNFT: any,
-    system_prompt?: string,
-    model?: string[],
-    temperature?: number,
-    response_type?: string,
-    response_schema?: any
-  ) => Promise<any>;
+  // Inherits the new callAIModel signature from BalanceRunMain
 }
 
 // Define the type for the runNaturalFunction parameter to make it explicit
@@ -247,20 +239,12 @@ export const initAIAccessPoint = async (
         // Create a wrapper for balanceRunMain.callAIModel that automatically includes user's system prompt
         const enhancedBalanceRunMain: EnhancedBalanceRunMain = {
           ...balanceRunMain,
-          callAIModel: async (
-            prompt: string,
-            accountNFT: any,
-            system_prompt?: string,
-            model?: string[],
-            temperature?: number,
-            response_type?: string,
-            response_schema?: any
-          ) => {
+          callAIModel: async (params, accountNFT) => {
             // Get the current user system prompt from the request (in case it changed) - handles both JSON and form data
             const currentUserSystemPrompt = req.body.systemPrompt || req.body.system_prompt || req.body['systemPrompt'] || req.body['system_prompt'];
 
             // Combine user's system prompt with any existing system prompt
-            let combinedSystemPrompt = system_prompt || '';
+            let combinedSystemPrompt = params.system_prompt || '';
             if (currentUserSystemPrompt) {
               combinedSystemPrompt = combinedSystemPrompt
                 ? `${combinedSystemPrompt}\n\n${currentUserSystemPrompt}`
@@ -268,13 +252,11 @@ export const initAIAccessPoint = async (
             }
 
             return balanceRunMain.callAIModel(
-              prompt,
-              accountNFT,
-              combinedSystemPrompt,
-              model,
-              temperature,
-              response_type,
-              response_schema
+              {
+                ...params,
+                system_prompt: combinedSystemPrompt
+              },
+              accountNFT
             );
           }
         };
