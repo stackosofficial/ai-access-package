@@ -17,15 +17,13 @@ import { getSkyNode } from "../../core/init";
  * as the current balance management system.
  */
 export default class SkynetFractionalPaymentService {
-  private envConfig: ENVConfig;
   private contractAddress: string;
   private contract: ethers.Contract;
 
   // Hardcoded contract address for SkynetFractionalEscrow
   private static readonly CONTRACT_ADDRESS = "0x84D7C1aD5ec92d22A898E8a974fAc9C09985297a";
 
-  constructor(envConfig: ENVConfig) {
-    this.envConfig = envConfig;
+  constructor() {
     this.contractAddress = SkynetFractionalPaymentService.CONTRACT_ADDRESS;
     
     const skyNode = getSkyNode();

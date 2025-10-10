@@ -1,80 +1,11 @@
 import { TableSchema } from './databaseMigration';
 
 export interface AppTableSchemas {
-  balanceTables: TableSchema[];
   apiKeyTables: TableSchema[];
   authTables: TableSchema[];
   dataStorageTables: TableSchema[];
 }
 
-export function getBalanceTableSchemas(subnetId: string): TableSchema[] {
-  const costsTable = `nft_extract_costs_${subnetId}`;
-  const historyTable = `nft_extract_costs_history_${subnetId}`;
-
-  return [
-    {
-      tableName: costsTable,
-      createTableSQL: `
-        CREATE TABLE IF NOT EXISTS ${costsTable} (
-          id SERIAL PRIMARY KEY,
-          collection_id TEXT NOT NULL,
-          nft_id TEXT NOT NULL,
-          costs TEXT NOT NULL,
-          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-          UNIQUE(collection_id, nft_id),
-          failed_count INT DEFAULT 0,
-          success_count INT DEFAULT 0
-        );
-        
-        CREATE INDEX IF NOT EXISTS idx_${costsTable}_collection_nft 
-        ON ${costsTable}(collection_id, nft_id);
-        
-        CREATE INDEX IF NOT EXISTS idx_${costsTable}_costs 
-        ON ${costsTable}(costs);
-      `,
-      requiredColumns: [
-        { name: 'id', type: 'SERIAL', nullable: false },
-        { name: 'collection_id', type: 'TEXT', nullable: false },
-        { name: 'nft_id', type: 'TEXT', nullable: false },
-        { name: 'costs', type: 'TEXT', nullable: false },
-        { name: 'created_at', type: 'TIMESTAMP WITH TIME ZONE', defaultValue: 'CURRENT_TIMESTAMP' },
-        { name: 'updated_at', type: 'TIMESTAMP WITH TIME ZONE', defaultValue: 'CURRENT_TIMESTAMP' },
-        { name: 'failed_count', type: 'INT', defaultValue: '0' },
-        { name: 'success_count', type: 'INT', defaultValue: '0' }
-      ]
-    },
-    {
-      tableName: historyTable,
-      createTableSQL: `
-        CREATE TABLE IF NOT EXISTS ${historyTable} (
-          id SERIAL PRIMARY KEY,
-          collection_id TEXT NOT NULL,
-          nft_id TEXT NOT NULL,
-          costs TEXT NOT NULL,
-          applied BOOLEAN DEFAULT FALSE,
-          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-        );
-        
-        CREATE INDEX IF NOT EXISTS idx_${historyTable}_applied 
-        ON ${historyTable}(applied);
-        
-        CREATE INDEX IF NOT EXISTS idx_${historyTable}_created_at 
-        ON ${historyTable}(created_at DESC);
-      `,
-      requiredColumns: [
-        { name: 'id', type: 'SERIAL', nullable: false },
-        { name: 'collection_id', type: 'TEXT', nullable: false },
-        { name: 'nft_id', type: 'TEXT', nullable: false },
-        { name: 'costs', type: 'TEXT', nullable: false },
-        { name: 'applied', type: 'BOOLEAN', defaultValue: 'FALSE' },
-        { name: 'created_at', type: 'TIMESTAMP WITH TIME ZONE', defaultValue: 'CURRENT_TIMESTAMP' },
-        { name: 'updated_at', type: 'TIMESTAMP WITH TIME ZONE', defaultValue: 'CURRENT_TIMESTAMP' }
-      ]
-    }
-  ];
-}
 
 export function getApiKeyTableSchemas(): TableSchema[] {
   return [
@@ -240,7 +171,6 @@ export function getDataStorageTableSchemas(): TableSchema[] {
 
 export function getAllTableSchemas(subnetId: string): TableSchema[] {
   return [
-    ...getBalanceTableSchemas(subnetId),
     ...getApiKeyTableSchemas(),
     ...getAuthTableSchemas(),
     ...getDataStorageTableSchemas()
@@ -249,7 +179,6 @@ export function getAllTableSchemas(subnetId: string): TableSchema[] {
 
 export function getAppTableSchemas(subnetId: string): AppTableSchemas {
   return {
-    balanceTables: getBalanceTableSchemas(subnetId),
     apiKeyTables: getApiKeyTableSchemas(),
     authTables: getAuthTableSchemas(),
     dataStorageTables: getDataStorageTableSchemas()

@@ -1,26 +1,19 @@
-import { AccountNFT, APICallReturn } from "@decloudlabs/skynet/lib/types/types";
-import { NFTCosts } from "../../types/types";
+import { APICallReturn } from "@decloudlabs/skynet/lib/types/types";
 import ENVConfig from "../../core/envConfig";
-import { getSkyNode } from "../../core/init";
 import SkynetFractionalPaymentService from "../payment/skynetFractionalPaymentService";
 import { Pool } from "pg";
 
-const NFT_UPDATE_INTERVAL = 1 * 60 * 1000; // 1 minute
 const BATCH_SIZE = 10; // Process 10 NFTs at a time
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000; // 1 second
 
 export default class BalanceExtractService {
-  private nftCostsToWriteList: NFTCosts[];
-  private envConfig: ENVConfig;
   private pool: Pool;
   private paymentService: SkynetFractionalPaymentService;
 
-  constructor(envConfig: ENVConfig, pool: Pool) {
-    this.nftCostsToWriteList = [];
-    this.envConfig = envConfig;
+  constructor(pool: Pool) {
     this.pool = pool;
-    this.paymentService = new SkynetFractionalPaymentService(envConfig);
+    this.paymentService = new SkynetFractionalPaymentService();
   }
 
   private delay(ms: number): Promise<void> {
@@ -59,8 +52,6 @@ export default class BalanceExtractService {
     try {
       // Ensure walletAddress is a string and convert to lowercase for consistency
       const walletAddressStr = String(walletAddress).toLowerCase();
-      console.log(`🔍 addCost called with: walletAddress="${walletAddressStr}", subnetId="${subnetId}", amount="${amount}"`);
-      
       // Insert or update cost in fractional_payments table
       const query = `
         INSERT INTO fractional_payments (wallet_address, subnet_id, amount, created_at, updated_at)
@@ -94,9 +85,6 @@ export default class BalanceExtractService {
     for (const pendingCost of pendingCostsBatch) {
       try {
         const { wallet_address: userAddress, amount, subnet_id } = pendingCost;
-        
-        console.log(`🔍 Processing payment for wallet: ${userAddress}, amount from DB: "${amount}" (type: ${typeof amount}), subnet: ${subnet_id}`);
-
         // Check if user has sufficient balance before charging
         const balanceCheck = await this.paymentService.hasSufficientBalance(userAddress, amount);
         if (!balanceCheck.success) {

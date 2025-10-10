@@ -1,10 +1,4 @@
 import { Request, Response, NextFunction } from "express";
-import { getSkyNode } from "../core/init";
-import {
-  AccountNFT,
-  ETHAddress,
-  SkyContractService,
-} from "@decloudlabs/skynet/lib/types/types";
 import SkynetFractionalPaymentService from "../services/payment/skynetFractionalPaymentService";
 import SkyMainNodeJS from "@decloudlabs/skynet/lib/services/SkyMainNodeJS";
 import ENVConfig from "../core/envConfig";
@@ -14,8 +8,6 @@ export const checkBalance = async (
   req: Request,
   res: Response,
   next: NextFunction,
-  envConfig: ENVConfig,
-  skyNode: SkyMainNodeJS,
   pool: Pool
 ) => {
   try {
@@ -31,7 +23,7 @@ export const checkBalance = async (
     }
 
     // Initialize fractional payment service
-    const paymentService = new SkynetFractionalPaymentService(envConfig);
+    const paymentService = new SkynetFractionalPaymentService();
 
     // Check user's total balance (deposits + credits) in the fractional escrow contract
     const totalBalanceResponse = await paymentService.getUserTotalBalance(walletAddress);
@@ -46,12 +38,7 @@ export const checkBalance = async (
 
     const { depositBalance, creditBalance, totalBalance } = totalBalanceResponse.data;
 
-    // Get total pending costs from database for this user across all subnets
-    // Use the provided pool connection instead of creating a new one
-    // Query by wallet_address (converted to lowercase for consistency)
     const walletAddressLower = walletAddress.toLowerCase();
-    console.log(`🔍 checkBalance - Querying pending costs for walletAddress: "${walletAddressLower}"`);
-    
     const pendingCostsQuery = `
       SELECT COALESCE(SUM(CAST(amount AS BIGINT)), 0) as total_pending
       FROM fractional_payments 
@@ -114,17 +101,4 @@ export const checkBalance = async (
       data: error.toString(),
     });
   }
-};
-
-const hasRole = async (
-  accountNFT: AccountNFT,
-  roleValue: string,
-  requester: ETHAddress,
-  contractService: SkyContractService
-) => {
-  const result = await contractService.callContractRead<boolean, boolean>(
-    contractService.NFTRoles.hasRole(accountNFT, roleValue, requester),
-    (res) => res
-  );
-  return result;
 };

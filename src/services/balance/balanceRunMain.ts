@@ -34,7 +34,6 @@ export default class BalanceRunMain {
     );
 
     this.balanceExtractService = new BalanceExtractService(
-      this.envConfig,
       pool
     );
     this.skyNode = skyNode;
