@@ -169,6 +169,8 @@ export default class SkynetFractionalPaymentService {
       }
 
       const amountBigInt = BigInt(amount);
+      console.log(`🔍 chargeForServices - userAddress: ${userAddress}, amount string: "${amount}", amountBigInt: ${amountBigInt}`);
+      
       if (amountBigInt <= 0) {
         return {
           success: false,
@@ -176,23 +178,26 @@ export default class SkynetFractionalPaymentService {
         };
       }
 
-      // Check if user has sufficient balance before charging
-      const balanceCheck = await this.getUserDepositBalance(userAddress);
-      if (!balanceCheck.success) {
+      // Check if user has sufficient total balance (deposits + credits) before charging
+      const totalBalanceCheck = await this.getUserTotalBalance(userAddress);
+      if (!totalBalanceCheck.success) {
         return {
           success: false,
           data: new Error("Failed to check user balance")
         };
       }
 
-      if (balanceCheck.data < amountBigInt) {
+      console.log(`💰 User total balance: ${totalBalanceCheck.data.totalBalance} wei (deposits: ${totalBalanceCheck.data.depositBalance}, credits: ${totalBalanceCheck.data.creditBalance}), needs: ${amountBigInt} wei`);
+
+      if (totalBalanceCheck.data.totalBalance < amountBigInt) {
         return {
           success: false,
-          data: new Error(`Insufficient balance. User has ${balanceCheck.data} wei but needs ${amountBigInt} wei`)
+          data: new Error(`Insufficient balance. User has ${totalBalanceCheck.data.totalBalance} wei (deposits: ${totalBalanceCheck.data.depositBalance} wei, credits: ${totalBalanceCheck.data.creditBalance} wei) but needs ${amountBigInt} wei`)
         };
       }
 
       // Charge the user
+      console.log(`💳 Calling contract.chargeForServices(${userAddress}, ${amountBigInt})`);
       const response = await skyNode.contractService.callContractWrite(
         this.contract.chargeForServices(userAddress, amountBigInt)
       );

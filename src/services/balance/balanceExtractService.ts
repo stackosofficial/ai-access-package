@@ -51,24 +51,28 @@ export default class BalanceExtractService {
 
   /**
    * Add cost to database for later batch processing
-   * @param apiKeyId - API key ID (stored as api_key in database)
+   * @param walletAddress - User's wallet address (stored as wallet_address in database)
    * @param subnetId - Subnet identifier
    * @param amount - Cost amount in wei
    */
-  addCost = async (apiKeyId: string, subnetId: string, amount: string): Promise<APICallReturn<boolean>> => {
+  addCost = async (walletAddress: string, subnetId: string, amount: string): Promise<APICallReturn<boolean>> => {
     try {
+      // Ensure walletAddress is a string and convert to lowercase for consistency
+      const walletAddressStr = String(walletAddress).toLowerCase();
+      console.log(`🔍 addCost called with: walletAddress="${walletAddressStr}", subnetId="${subnetId}", amount="${amount}"`);
+      
       // Insert or update cost in fractional_payments table
       const query = `
-        INSERT INTO fractional_payments (api_key, subnet_id, amount, created_at, updated_at)
+        INSERT INTO fractional_payments (wallet_address, subnet_id, amount, created_at, updated_at)
         VALUES ($1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        ON CONFLICT (api_key, subnet_id) 
+        ON CONFLICT (wallet_address, subnet_id) 
         DO UPDATE SET 
           amount = (CAST(fractional_payments.amount AS BIGINT) + CAST($3 AS BIGINT))::TEXT,
           updated_at = CURRENT_TIMESTAMP
       `;
 
-      await this.pool.query(query, [apiKeyId, subnetId, amount]);
-      console.log(`📝 Added cost ${amount} wei for API key ${apiKeyId} (subnet: ${subnetId})`);
+      await this.pool.query(query, [walletAddressStr, subnetId, amount]);
+      console.log(`📝 Added cost ${amount} wei for wallet ${walletAddressStr} (subnet: ${subnetId})`);
       
       return { success: true, data: true };
     } catch (error) {
@@ -89,19 +93,9 @@ export default class BalanceExtractService {
 
     for (const pendingCost of pendingCostsBatch) {
       try {
-        const { api_key: apiKeyId, amount, subnet_id } = pendingCost;
-
-        // Get wallet address from API key
-        const apiKeyQuery = `SELECT wallet_address FROM api_keys WHERE id = $1`;
-        const apiKeyResult = await this.pool.query(apiKeyQuery, [apiKeyId]);
+        const { wallet_address: userAddress, amount, subnet_id } = pendingCost;
         
-        if (apiKeyResult.rows.length === 0) {
-          results.failed++;
-          results.errors.push(`API key ${apiKeyId} not found`);
-          continue;
-        }
-
-        const userAddress = apiKeyResult.rows[0].wallet_address;
+        console.log(`🔍 Processing payment for wallet: ${userAddress}, amount from DB: "${amount}" (type: ${typeof amount}), subnet: ${subnet_id}`);
 
         // Check if user has sufficient balance before charging
         const balanceCheck = await this.paymentService.hasSufficientBalance(userAddress, amount);
@@ -125,18 +119,18 @@ export default class BalanceExtractService {
         if (chargeResponse.success) {
           // Reset the cost to 0 in database after successful charge
           await this.pool.query(
-            `UPDATE fractional_payments SET amount = '0', updated_at = CURRENT_TIMESTAMP WHERE api_key = $1 AND subnet_id = $2`,
-            [apiKeyId, subnet_id]
+            `UPDATE fractional_payments SET amount = '0', updated_at = CURRENT_TIMESTAMP WHERE wallet_address = $1 AND subnet_id = $2`,
+            [userAddress, subnet_id]
           );
           results.successful++;
-          console.log(`✅ Successfully charged ${amount} wei from user ${userAddress} (API key: ${apiKeyId}, subnet: ${subnet_id})`);
+          console.log(`✅ Successfully charged ${amount} wei from user ${userAddress} (wallet: ${userAddress}, subnet: ${subnet_id})`);
         } else {
           results.failed++;
           results.errors.push(`Failed to charge ${userAddress}: ${chargeResponse.data}`);
         }
       } catch (error) {
         results.failed++;
-        results.errors.push(`Error processing ${pendingCost.api_key}: ${error}`);
+        results.errors.push(`Error processing ${pendingCost.wallet_address}: ${error}`);
       }
     }
 
@@ -150,7 +144,7 @@ export default class BalanceExtractService {
     try {
       // Get all pending costs from fractional_payments table
       const pendingCostsQuery = `
-        SELECT api_key, subnet_id, amount, created_at
+        SELECT wallet_address, subnet_id, amount, created_at
         FROM fractional_payments 
         WHERE CAST(amount AS BIGINT) > 0
         ORDER BY created_at ASC

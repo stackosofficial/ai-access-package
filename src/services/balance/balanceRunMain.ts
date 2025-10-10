@@ -42,7 +42,7 @@ export default class BalanceRunMain {
 
   setup = async () => {
     try {
-      const UPDATE_DURATION = 10 * 1000;
+      const UPDATE_DURATION = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
       this.RUN_DURATION = UPDATE_DURATION;
 
       await this.balanceExtractService.setup();
@@ -74,14 +74,17 @@ export default class BalanceRunMain {
   };
 
   addCost = async (
-    apiKeyId: string,
+    walletAddress: string,
     cost: string
   ): Promise<APICallReturn<boolean>> => {
     try {
+      // Ensure walletAddress is a string
+      const walletAddressStr = String(walletAddress);
+
       // Add cost to database using the new fractional payment system
-      // We store costs by API key ID, not wallet address
+      // We store costs by wallet address
       const result = await this.balanceExtractService.addCost(
-        apiKeyId,
+        walletAddressStr,
         this.envConfig.env.SUBNET_ID,
         cost
       );
@@ -91,7 +94,7 @@ export default class BalanceRunMain {
         return result;
       }
 
-      console.log(`✅ Added cost ${cost} wei for API key ${apiKeyId}`);
+      console.log(`✅ Added cost ${cost} wei for wallet ${walletAddressStr}`);
       return { success: true, data: true };
     } catch (error) {
       console.error("❌ Error in addCost:", error);

@@ -1,5 +1,3 @@
-// Export core functionality
-export { ServiceManagement } from '../database/serviceManagement';
 export { protect } from '../middleware/auth';
 
 // Export auth service
@@ -11,7 +9,6 @@ export type {
   ApiKeyResponse
 } from '../types/types';
 
-export type { ServiceDetails } from '../database/serviceManagement';
 
 // Export AI Model validation types
 export type { AIModelCallParams } from '../services/balance/aiModelValidation';
