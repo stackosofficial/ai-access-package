@@ -195,21 +195,45 @@ export default class BalanceExtractService {
     for (const pendingCost of pendingCostsBatch) {
       try {
         const { wallet_address: userAddress, amount } = pendingCost;
-        // Check if user has sufficient balance before charging
-        const balanceCheck = await this.paymentService.hasSufficientBalance(userAddress, amount);
-        if (!balanceCheck.success) {
+        // Get user's total balance
+        const totalBalanceResponse = await this.paymentService.getUserTotalBalance(userAddress);
+        if (!totalBalanceResponse.success) {
           results.failed++;
-          results.errors.push(`Failed to check balance for ${userAddress}: ${balanceCheck.data}`);
+          results.errors.push(`Failed to check balance for ${userAddress}: ${totalBalanceResponse.data}`);
           continue;
         }
 
-        if (!balanceCheck.data) {
-          results.failed++;
-          results.errors.push(`Insufficient balance for ${userAddress}. Required: ${amount} wei`);
+        const { totalBalance } = totalBalanceResponse.data;
+        const requiredAmount = BigInt(amount);
+
+        // If user doesn't have enough balance, charge whatever they have and clear pending
+        if (totalBalance < requiredAmount) {
+          console.log(`⚠️ Insufficient balance for ${userAddress}. Has: ${totalBalance} wei, Required: ${requiredAmount} wei. Charging available balance and clearing pending.`);
+          
+          if (totalBalance > 0) {
+            // Charge whatever balance they have
+            const chargeResponse = await this.retryOperation(() =>
+              this.paymentService.chargeForServices(userAddress, totalBalance.toString())
+            );
+
+            if (chargeResponse.success) {
+              console.log(`✅ Partially charged ${totalBalance} wei from user ${userAddress} (settled available balance)`);
+            } else {
+              console.error(`❌ Failed to charge available balance for ${userAddress}:`, chargeResponse.data);
+            }
+          }
+
+          // Clear pending costs from database regardless of charge success
+          await this.pool.query(
+            `UPDATE fractional_payments SET amount = '0', updated_at = CURRENT_TIMESTAMP WHERE wallet_address = $1`,
+            [userAddress]
+          );
+          results.successful++;
+          console.log(`✅ Cleared pending costs for ${userAddress} (insufficient balance, charged what was available)`);
           continue;
         }
 
-        // Charge the user for the service
+        // User has sufficient balance, charge the full amount
         const chargeResponse = await this.retryOperation(() =>
           this.paymentService.chargeForServices(userAddress, amount)
         );
