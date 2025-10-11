@@ -278,28 +278,40 @@ export const initAIAccessPoint = async (
       app.post(
         "/natural-request",
         upload.array("files"),
-        sessionMiddleware,
-        parseAuth,
+        sessionMiddleware,  // 1. FAST PATH: If session valid, sets all data & sessionValidated=true
         async (req: Request, res: Response, next: NextFunction) => {
-          await protect(req, res, next, skyNodeParam, pool);
+          // Skip if session was already validated
+          if ((req as any).sessionValidated) return next();
+          await parseAuth(req, res, next);  // 2. Parse auth (API key or signature)
         },
         async (req: Request, res: Response, next: NextFunction) => {
-          await checkBalance(req, res, next, pool);
+          // Skip if session was already validated
+          if ((req as any).sessionValidated) return next();
+          await protect(req, res, next, skyNodeParam, pool);  // 3. Validate (blockchain calls)
         },
-        handleRequest
+        async (req: Request, res: Response, next: NextFunction) => {
+          await checkBalance(req, res, next, pool);  // 4. Always check balance
+        },
+        handleRequest  // 5. Handle request
       );
     } else {
       app.post(
         "/natural-request",
-        sessionMiddleware, 
-        parseAuth,
+        sessionMiddleware,  // 1. FAST PATH: If session valid, sets all data & sessionValidated=true
         async (req: Request, res: Response, next: NextFunction) => {
-          await protect(req, res, next, skyNodeParam, pool);
+          // Skip if session was already validated
+          if ((req as any).sessionValidated) return next();
+          await parseAuth(req, res, next);  // 2. Parse auth (API key or signature)
         },
         async (req: Request, res: Response, next: NextFunction) => {
-          await checkBalance(req, res, next, pool);  // 4. Check balance
+          // Skip if session was already validated
+          if ((req as any).sessionValidated) return next();
+          await protect(req, res, next, skyNodeParam, pool);  // 3. Validate (blockchain calls)
         },
-        handleRequest
+        async (req: Request, res: Response, next: NextFunction) => {
+          await checkBalance(req, res, next, pool);  // 4. Always check balance
+        },
+        handleRequest  // 5. Handle request
       );
     }
 

@@ -2,8 +2,8 @@ import { Request, Response, NextFunction } from "express";
 import { sessionService } from '../auth/sessionService';
 
 /**
- * Session Middleware - Extracts API key from session token and adds to headers
- * This runs BEFORE parseAuth to allow session tokens to be treated like API keys
+ * Session Middleware - Fast path for session tokens
+ * Validates session and sets all required data, skipping blockchain verification
  */
 export const sessionMiddleware = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -11,7 +11,7 @@ export const sessionMiddleware = async (req: Request, res: Response, next: NextF
     const sessionToken = sessionService.extractSessionTokenFromRequest(req);
     
     if (!sessionToken) {
-      // No session token, continue to parseAuth (will handle API key or signature)
+      // No session token, continue to normal auth flow
       return next();
     }
 
@@ -19,27 +19,36 @@ export const sessionMiddleware = async (req: Request, res: Response, next: NextF
     const validationResult = sessionService.validateSessionToken(sessionToken);
     
     if (!validationResult.isValid) {
-      // Invalid session token, log but continue to parseAuth (might have API key/signature)
-      console.log(`⚠️ Invalid session token: ${validationResult.error}, continuing to parseAuth`);
+      // Invalid session token, log but continue to normal auth flow
+      console.log(`⚠️ Invalid session token: ${validationResult.error}, falling back to normal auth`);
       return next();
     }
 
     const sessionData = validationResult.data!;
     
-    // Extract API key ID from session and add to headers
-    // This allows the session to be treated like an API key request
-    req.headers['x-api-key'] = sessionData.apiKeyId;
+    // FAST PATH: Extract all data from session and set directly
+    // This skips parseAuth and protect middleware entirely
+    req.body = {
+      ...req.body,
+      walletAddress: sessionData.walletAddress,
+      accountNFT: sessionData.accountNFT,
+      agentCollection: sessionData.agentCollection
+    };
     
-    // Mark this as a session request for logging/optimization
+    // Set apiKeyId for checkBalance middleware
+    (req as any).apiKeyId = sessionData.apiKeyId;
+    
+    // Mark as session request for logging
     (req as any).isSessionRequest = true;
+    (req as any).sessionValidated = true;
     
-    console.log(`🔑 Session token validated, extracted API key: ${sessionData.apiKeyId} (session: ${sessionData.sessionId})`);
+    console.log(`🚀 Session fast path: Validated session ${sessionData.sessionId} for wallet ${sessionData.walletAddress} (skipping blockchain verification)`);
     
-    // Continue to parseAuth which will now process the API key
+    // Continue to next middleware (skip parseAuth and protect)
     next();
   } catch (error: any) {
     console.error('❌ Error in sessionMiddleware:', error);
-    // Don't fail the request, just continue to parseAuth
+    // Don't fail the request, just continue to normal auth flow
     next();
   }
 };
