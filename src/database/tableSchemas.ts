@@ -95,6 +95,7 @@ export function getAuthTableSchemas(): TableSchema[] {
           backend_id TEXT NOT NULL DEFAULT 'default',
           agent_collection_address TEXT,
           agent_collection_id INTEGER,
+          account_name TEXT,
           auth_data JSONB,
           created_at TIMESTAMPTZ DEFAULT NOW(),
           updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -121,6 +122,7 @@ export function getAuthTableSchemas(): TableSchema[] {
         { name: 'backend_id', type: 'TEXT', nullable: false, defaultValue: "'default'" },
         { name: 'agent_collection_address', type: 'TEXT', nullable: true },
         { name: 'agent_collection_id', type: 'INTEGER', nullable: true },
+        { name: 'account_name', type: 'TEXT', nullable: true },
         { name: 'auth_data', type: 'JSONB', nullable: true },
         { name: 'created_at', type: 'TIMESTAMPTZ', defaultValue: 'NOW()' },
         { name: 'updated_at', type: 'TIMESTAMPTZ', defaultValue: 'NOW()' }

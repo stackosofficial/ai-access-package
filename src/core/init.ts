@@ -433,11 +433,16 @@ export const initAIAccessPoint = async (
               });
             }
 
-            const isAuthenticated = await authService!.checkAuthStatus(req);
+            const authData = await authService!.getAuth(req);
+            const isAuthenticated = authData ? await authService!.checkAuthStatus(req) : false;
 
             res.json({
               success: true,
-              data: isAuthenticated
+              data: {
+                isAuthenticated,
+                accountName: authData?.account_name || null,
+                authData: authData || null
+              }
             });
           } catch (error: any) {
             console.error("❌ Error in auth-status handler:", error);

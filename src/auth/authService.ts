@@ -40,7 +40,7 @@ export abstract class AuthService {
   }
 
   // Core auth operations
-  async saveAuth(req: any, authData: any): Promise<void> {
+  async saveAuth(req: any, authData: any, accountName?: string): Promise<void> {
     try {
       const userAddress = this.normalizeAddress(req.body.walletAddress);
       const nftId = req.body.accountNFT.nftID;
@@ -56,15 +56,15 @@ export abstract class AuthService {
       if (existingRecord.rows.length > 0) {
         // Update existing record - all fields match
         await this.pool.query(
-          'UPDATE auth_data SET auth_data = $1, updated_at = NOW() WHERE LOWER(user_address) = $2 AND nft_id = $3 AND backend_id = $4 AND (agent_collection_address IS NOT DISTINCT FROM $5) AND (agent_collection_id IS NOT DISTINCT FROM $6)',
-          [JSON.stringify(authData), userAddress, nftId, this.backendId, agentCollectionAddress, agentCollectionId]
+          'UPDATE auth_data SET auth_data = $1, account_name = $2, updated_at = NOW() WHERE LOWER(user_address) = $3 AND nft_id = $4 AND backend_id = $5 AND (agent_collection_address IS NOT DISTINCT FROM $6) AND (agent_collection_id IS NOT DISTINCT FROM $7)',
+          [JSON.stringify(authData), accountName || null, userAddress, nftId, this.backendId, agentCollectionAddress, agentCollectionId]
         );
         console.log('✅ Updated existing auth record');
       } else {
         // Create new record - at least one field is different
         await this.pool.query(
-          'INSERT INTO auth_data (user_address, nft_id, backend_id, agent_collection_address, agent_collection_id, auth_data, updated_at) VALUES ($1, $2, $3, $4, $5, $6, NOW())',
-          [userAddress, nftId, this.backendId, agentCollectionAddress, agentCollectionId, JSON.stringify(authData)]
+          'INSERT INTO auth_data (user_address, nft_id, backend_id, agent_collection_address, agent_collection_id, account_name, auth_data, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())',
+          [userAddress, nftId, this.backendId, agentCollectionAddress, agentCollectionId, accountName || null, JSON.stringify(authData)]
         );
         console.log('✅ Created new auth record');
       }
@@ -104,23 +104,33 @@ export abstract class AuthService {
       if (agentCollectionAddress && agentCollectionId !== null) {
         console.log(`🔍 getAuth - Searching with both agentCollectionAddress and agentCollectionId`);
         const result = await this.pool.query(
-          'SELECT auth_data FROM auth_data WHERE LOWER(user_address) = $1 AND nft_id = $2 AND backend_id = $3 AND agent_collection_address = $4 AND agent_collection_id = $5',
+          'SELECT auth_data, account_name FROM auth_data WHERE LOWER(user_address) = $1 AND nft_id = $2 AND backend_id = $3 AND agent_collection_address = $4 AND agent_collection_id = $5',
           [userAddress, nftId, this.backendId, agentCollectionAddress, agentCollectionId]
         );
         
         console.log(`🔍 getAuth - Found ${result.rows.length} matching records with agent filtering`);
-        return result.rows.length > 0 ? result.rows[0].auth_data : null;
+        if (result.rows.length > 0) {
+          const authData = result.rows[0].auth_data;
+          const accountName = result.rows[0].account_name;
+          return { ...authData, account_name: accountName };
+        }
+        return null;
       }
       
       // If no agentCollection provided, try basic auth without agent filtering
       console.log(`🔍 getAuth - No agentCollection provided, trying basic auth without agent filtering`);
       const result = await this.pool.query(
-        'SELECT auth_data FROM auth_data WHERE LOWER(user_address) = $1 AND nft_id = $2 AND backend_id = $3 AND agent_collection_address IS NULL AND agent_collection_id IS NULL',
+        'SELECT auth_data, account_name FROM auth_data WHERE LOWER(user_address) = $1 AND nft_id = $2 AND backend_id = $3 AND agent_collection_address IS NULL AND agent_collection_id IS NULL',
         [userAddress, nftId, this.backendId]
       );
       
       console.log(`🔍 getAuth - Found ${result.rows.length} matching records without agent filtering`);
-      return result.rows.length > 0 ? result.rows[0].auth_data : null;
+      if (result.rows.length > 0) {
+        const authData = result.rows[0].auth_data;
+        const accountName = result.rows[0].account_name;
+        return { ...authData, account_name: accountName };
+      }
+      return null;
     } catch (error) {
       console.error('Error getting auth data:', error);
       return null;
