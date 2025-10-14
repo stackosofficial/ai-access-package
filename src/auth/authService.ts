@@ -49,14 +49,14 @@ export abstract class AuthService {
       
       // Check if a record exists with the exact same parameters
       const existingRecord = await this.pool.query(
-        'SELECT user_address FROM auth_data WHERE LOWER(user_address) = $1 AND nft_id = $2 AND backend_id = $3 AND (agent_collection_address IS NOT DISTINCT FROM $4) AND (agent_collection_id IS NOT DISTINCT FROM $5)',
+        'SELECT user_address FROM auth_data WHERE LOWER(user_address) = $1 AND nft_id = $2 AND backend_id = $3 AND (LOWER(agent_collection_address) IS NOT DISTINCT FROM $4) AND (agent_collection_id IS NOT DISTINCT FROM $5)',
         [userAddress, nftId, this.backendId, agentCollectionAddress, agentCollectionId]
       );
       
       if (existingRecord.rows.length > 0) {
         // Update existing record - all fields match
         await this.pool.query(
-          'UPDATE auth_data SET auth_data = $1, account_name = $2, updated_at = NOW() WHERE LOWER(user_address) = $3 AND nft_id = $4 AND backend_id = $5 AND (agent_collection_address IS NOT DISTINCT FROM $6) AND (agent_collection_id IS NOT DISTINCT FROM $7)',
+          'UPDATE auth_data SET auth_data = $1, account_name = $2, updated_at = NOW() WHERE LOWER(user_address) = $3 AND nft_id = $4 AND backend_id = $5 AND (LOWER(agent_collection_address) IS NOT DISTINCT FROM $6) AND (agent_collection_id IS NOT DISTINCT FROM $7)',
           [JSON.stringify(authData), accountName || null, userAddress, nftId, this.backendId, agentCollectionAddress, agentCollectionId]
         );
         console.log('✅ Updated existing auth record');
@@ -82,7 +82,7 @@ export abstract class AuthService {
       const { agentCollectionAddress, agentCollectionId } = this.normalizeAgentData(agentCollection);
       
       await this.pool.query(
-        'DELETE FROM auth_data WHERE LOWER(user_address) = $1 AND nft_id = $2 AND backend_id = $3 AND (agent_collection_address IS NOT DISTINCT FROM $4) AND (agent_collection_id IS NOT DISTINCT FROM $5)',
+        'DELETE FROM auth_data WHERE LOWER(user_address) = $1 AND nft_id = $2 AND backend_id = $3 AND (LOWER(agent_collection_address) IS NOT DISTINCT FROM $4) AND (agent_collection_id IS NOT DISTINCT FROM $5)',
         [userAddress, nftId, this.backendId, agentCollectionAddress, agentCollectionId]
       );
     } catch (error) {
@@ -104,7 +104,7 @@ export abstract class AuthService {
       if (agentCollectionAddress && agentCollectionId !== null) {
         console.log(`🔍 getAuth - Searching with both agentCollectionAddress and agentCollectionId`);
         const result = await this.pool.query(
-          'SELECT auth_data, account_name FROM auth_data WHERE LOWER(user_address) = $1 AND nft_id = $2 AND backend_id = $3 AND agent_collection_address = $4 AND agent_collection_id = $5',
+          'SELECT auth_data, account_name FROM auth_data WHERE LOWER(user_address) = $1 AND nft_id = $2 AND backend_id = $3 AND LOWER(agent_collection_address) = $4 AND agent_collection_id = $5',
           [userAddress, nftId, this.backendId, agentCollectionAddress, agentCollectionId]
         );
         
