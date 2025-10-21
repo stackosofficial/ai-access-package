@@ -1,0 +1,1294 @@
+# ai-access-point SDK Rules (Updated v0.3.10)
+
+## 1. No Socket.IO or WebSocket Support
+- All Socket.IO and WebSocket code, tests, and documentation are deprecated and must not be used.
+- All communication is via HTTP REST endpoints only.
+- Remove any references to socket.io-client, WebSocketManager, or related test scripts.
+
+## 2. Authentication Handling for Third-Party Apps
+
+### **AuthService Abstract Class**
+- All third-party authentication must use the new `AuthService` abstract class in `src/auth/authService.ts`.
+- The AuthService provides a standardized interface for OAuth flows and token management.
+- The SDK automatically manages the global auth service instance and database connections.
+
+### **Required Methods for Custom AuthService**
+The only required methods for a custom AuthService are:
+- `generateAuthLink(req: any): Promise<string>` - Generate OAuth authorization URL
+- `revokeAuth(req: any): Promise<void>` - Revoke authentication
+- The SDK provides: `saveAuth()`, `getAuth()`, `deleteAuth()`, `checkAuthStatus()`, `initTable()`
+
+### **AuthService Constructor Pattern**
+- **NO constructor parameters** - AuthService classes should not take any parameters
+- **NO direct database URL or pool passing** in constructors
+- Use the global PostgreSQL URL set during SDK initialization
+- The SDK automatically provides the database pool to the auth service internally
+- **Pass class, not instance** - Pass the auth service class to `initAIAccessPoint`, not an instance
+
+### **Example AuthService Implementation**
+```typescript
+// src/services/GmailAuthService.ts
+import { AuthService } from '@decloudlabs/sky-ai-accesspoint/lib/auth/authService';
+
+export class GmailAuthService extends AuthService {
+  constructor() {
+    super();
+    // Initialize OAuth client
+  }
+
+  async generateAuthLink(req: any): Promise<string> {
+    const userAddress = req.body.walletAddress;
+    const nftId = req.body.accountNFT.nftID;
+    // Generate OAuth URL
+    return oauthUrl;
+  }
+
+  async revokeAuth(req: any): Promise<void> {
+    await this.deleteAuth(req);
+  }
+}
+```
+
+### **AuthService Initialization in Main App**
+```typescript
+// src/index.ts
+import { initAIAccessPoint, getAuthService } from "@decloudlabs/sky-ai-accesspoint";
+import { GmailAuthService } from "./services/GmailAuthService";
+
+const setup = async () => {
+  const skyNode: SkyMainNodeJS = await getSkyNode();
+  const env = {
+    JSON_RPC_PROVIDER: process.env.PROVIDER_RPC!,
+    WALLET_PRIVATE_KEY: process.env.WALLET_PRIVATE_KEY!,
+    SUBNET_ID: process.env.SUBNET_ID!,
+    POSTGRES_URL: process.env.DATABASE_URL!,
+    SERVER_COST_CONTRACT_ADDRESS: process.env.SERVER_COST_CONTRACT_ADDRESS!,
+  };
+
+  const balanceRunMain = await initAIAccessPoint(
+    env,
+    skyNode,
+    app,
+    runNaturalFunction as any,
+    true, // Enable balance updates
+    upload, // Enable file upload middleware for attachments
+    { authServiceClass: GmailAuthService } // Pass auth service class (not instance)
+  );
+};
+```
+
+## 3. SDK-Automated API Endpoints (DO NOT CREATE YOUR OWN)
+
+### **IMPORTANT: All API Endpoints Are Created by SDK**
+- **❌ DO NOT create any API endpoints manually**
+- **❌ DO NOT create /auth-link, /auth-status, /generate-api-key, /revoke-api-key endpoints**
+- **❌ DO NOT create /natural-request endpoint**
+- **❌ DO NOT create /get-balance, /deposit-funds, /withdraw-funds endpoints**
+- **✅ ALL endpoints are automatically created by the SDK during initialization**
+
+### **SDK-Automated Endpoints (No Developer Action Required)**
+The SDK automatically creates these endpoints during initialization:
+
+**Authentication Endpoints:**
+- **`/auth-link` (POST)**: Returns an auth link for the user. Requires `userAuthPayload` and `accountNFT` as **JSON strings** in the body.
+- **`/auth-status` (POST)**: Returns boolean for whether the user is authenticated. Requires `userAuthPayload` and `accountNFT` as **JSON strings** in the body.
+
+**API Key Management Endpoints:**
+- **`/generate-api-key` (POST)**: Generates a new API key for the authenticated user. Requires `userAuthPayload` and `accountNFT` as **JSON strings** in the body.
+- **`/revoke-api-key` (POST)**: Revokes an existing API key. Requires `userAuthPayload`, `accountNFT`, and `apiKey` in the body.
+
+**Main Request Endpoint:**
+- **`/natural-request` (POST)**: Main endpoint for AI requests. Accepts both JSON objects and FormData with files.
+
+**Balance Management Endpoints:**
+- **`/get-balance` (POST)**: Get user's on-chain balance and pending costs
+- **`/deposit-funds` (POST)**: Deposit funds to user's balance
+- **`/withdraw-funds` (POST)**: Withdraw funds from user's balance
+
+**Data Storage Endpoints:**
+- **`/fetch-data/:referenceId` (GET)**: Retrieve stored data by reference ID
+
+### **Developer-Required Endpoint**
+Developers must manually add the OAuth callback endpoint:
+
+- **`/auth/callback` (GET)**: OAuth callback endpoint for processing authorization codes and saving auth data.
+
+### **Auth Endpoint Payload Format (IMPORTANT)**
+The SDK's `parseAuth` middleware expects `userAuthPayload` and `accountNFT` to be **JSON strings**, not objects:
+
+#### **✅ CORRECT Format (JSON Strings):**
+```json
+{
+  "userAuthPayload": "{\"userAddress\":\"0x1234567890abcdef\",\"signature\":\"0x...\",\"message\":\"1713033600000\"}",
+  "accountNFT": "{\"collectionID\":\"0\",\"nftID\":\"53\"}"
+}
+```
+
+#### **❌ WRONG Format (JSON Objects):**
+```json
+{
+  "userAuthPayload": {
+    "userAddress": "0x1234567890abcdef",
+    "signature": "0x...",
+    "message": "1713033600000"
+  },
+  "accountNFT": {
+    "collectionID": "0",
+    "nftID": "53"
+  }
+}
+```
+
+## 4. Enhanced callAIModel Function
+
+### **Updated callAIModel Parameters**
+The `callAIModel` function now has a simplified interface:
+
+```typescript
+const completion = await balanceRunMain.callAIModel(
+  params: AIModelCallParams,
+  accountNFT: AccountNFT
+): Promise<any>
+```
+
+### **AIModelCallParams Interface**
+```typescript
+interface AIModelCallParams {
+  prompt: string;
+  model?: string;                    // Optional - defaults to "Qwen/Qwen3-Next-80B-A3B-Thinking"
+  system_prompt?: string;           // Optional system prompt
+  temperature?: number;             // Optional temperature (0.0 to 2.0)
+  max_tokens?: number;             // Optional max tokens
+  top_p?: number;                  // Optional top_p
+  top_k?: number;                  // Optional top_k
+  frequency_penalty?: number;      // Optional frequency penalty
+  presence_penalty?: number;       // Optional presence penalty
+  repetition_penalty?: number;     // Optional repetition penalty
+  stop?: string[];                 // Optional stop sequences
+  response_type?: 'json_object' | 'json_schema' | 'text'; // Response format
+  response_schema?: {              // JSON schema for structured responses
+    type: string;
+    properties?: Record<string, any>;
+    required?: string[];
+    name?: string;
+    description?: string;
+    additionalProperties?: boolean;
+  };
+  tools?: any[];                   // Optional tools for function calling
+  tool_choice?: 'auto' | 'required' | 'none' | { type: 'function'; function: { name: string; } };
+  images?: Array<{                 // Optional images for vision models
+    type: 'url' | 'base64';
+    url?: string;
+    base64_data?: string;
+    mime_type?: string;
+  }>;
+  stream?: boolean;                // Optional streaming
+  logprobs?: number;               // Optional logprobs
+  echo?: boolean;                  // Optional echo
+  n?: number;                      // Optional number of responses
+  safety_model?: string;           // Optional safety model
+}
+```
+
+### **Using callAIModel**
+```typescript
+const runNaturalFunction = async (
+  req: Request,
+  res: Response,
+  balanceRunMain: EnhancedBalanceRunMain,
+  responseHandler: ResponseHandler
+): Promise<void> => {
+  try {
+    const { prompt, accountNFT, userAuthPayload } = req.body;
+
+    responseHandler.sendUpdate("Processing your request...");
+
+    // Simple AI model call
+    const completion = await balanceRunMain.callAIModel(
+      {
+        prompt: prompt,
+        system_prompt: "You are a helpful assistant",
+        temperature: 0.7,
+        response_type: 'json_object'
+      },
+      accountNFT // Use user's accountNFT for AI model calls
+    );
+
+    if (!completion.success) {
+      responseHandler.sendError(completion.message, 500);
+      return;
+    }
+
+    // Calculate cost (example: 0.01 tokens per request)
+    const cost = BigInt(0.01 * 1e12);
+    
+    responseHandler.sendFinalResponse({
+      success: true,
+      message: "Request completed successfully",
+      data: { result: completion.message, timestamp: new Date().toISOString() }
+    });
+
+    // Add cost using wallet address
+    await balanceRunMain.addCost(userAuthPayload.userAddress, cost.toString());
+
+  } catch (error) {
+    responseHandler.sendError(error instanceof Error ? error.message : "Failed to process request", 500);
+  }
+};
+```
+
+## 5. Updated addCost Function
+
+### **addCost Now Uses Wallet Address**
+The `addCost` function now requires a wallet address instead of accountNFT:
+
+```typescript
+await balanceRunMain.addCost(
+  walletAddress: string,  // User's wallet address
+  cost: string           // Cost in wei as string
+): Promise<APICallReturn<boolean>>
+```
+
+### **Getting Wallet Address from Request**
+The wallet address is automatically extracted by the SDK middleware and available in the request:
+
+```typescript
+const runNaturalFunction = async (
+  req: Request,
+  res: Response,
+  balanceRunMain: EnhancedBalanceRunMain,
+  responseHandler: ResponseHandler
+): Promise<void> => {
+  try {
+    const { prompt, accountNFT, userAuthPayload } = req.body;
+    
+    // Wallet address is available from userAuthPayload
+    const walletAddress = userAuthPayload.userAddress;
+    
+    // Process request...
+    
+    // Add cost using wallet address
+    const cost = BigInt(0.01 * 1e12);
+    await balanceRunMain.addCost(walletAddress, cost.toString());
+    
+  } catch (error) {
+    responseHandler.sendError(error.message, 500);
+  }
+};
+```
+
+### **Wallet Address Sources**
+The wallet address is automatically extracted by the SDK from:
+1. **API Key authentication**: From the validated session
+2. **Direct authentication**: From `userAuthPayload.userAddress`
+3. **Session tokens**: From the validated session data
+
+## 6. AgentCollection Verification (Optional)
+- **AgentCollection is an optional field** that can be provided in requests to verify agent ownership on-chain
+- When provided, the SDK automatically verifies that the user owns the specified agent collection and agent ID
+- **Format**: `agentCollection` object with `agentAddress` (required) and `agentID` (optional)
+- **Verification**: SDK checks if user owns the agent collection or has admin role, and if agentID is provided, verifies ownership of that specific agent
+
+### **AgentCollection Request Format**
+```json
+{
+  "prompt": "Your AI request",
+  "userAuthPayload": {
+    "userAddress": "0x1234567890abcdef",
+    "signature": "0x...",
+    "message": "1713033600000"
+  },
+  "accountNFT": {
+    "collectionID": "0",
+    "nftID": "53"
+  },
+  "agentCollection": {
+    "agentAddress": "0xabcdef1234567890",  // Required: Agent collection contract address
+    "agentID": "123"                        // Optional: Specific agent ID to verify ownership
+  }
+}
+```
+
+## 7. Streaming
+- Streaming is supported only via HTTP Server-Sent Events (SSE) using the `stream=true` query parameter.
+- Use the `ResponseHandler` interface for all responses, including streaming.
+
+## 8. Testing Requirements and Restrictions
+
+### **MANDATORY: Use Test Scripts Only**
+- **❌ NEVER use curl or Postman** for testing AI Access Point endpoints
+- **❌ NEVER use manual tools** for authentication testing
+- **✅ ALWAYS use TypeScript test scripts** with the Sky AI Access Point SDK
+
+### **Why Manual Testing Tools Are Forbidden**
+1. **Signature Generation**: The SDK automatically generates cryptographic signatures with proper timing
+2. **10-Minute Time Window**: Signatures expire after 10 minutes - SDK handles this automatically
+3. **Proper Authentication Flow**: SDK manages the complete auth lifecycle including token refresh
+4. **Consistent Testing**: Test scripts ensure reproducible results across different environments
+5. **Error Handling**: SDK provides proper error handling and retry mechanisms
+
+### **Required Test Script Structure**
+All test scripts must follow this pattern:
+
+```typescript
+// test-[feature-name].ts
+import axios from 'axios';
+import { getSkyNode } from './src/clients/skynet';
+
+async function test[FeatureName]() {
+  // Step 1: Get authenticated SkyNode instance
+  const skyNode = await getSkyNode();
+  const signature = await skyNode.appManager.getUrsulaAuth();
+  
+  try {
+    // Step 2: Make request with proper SDK-generated signatures
+    const response = await axios.post('http://localhost:3000/[endpoint]', {
+      // Use SDK-generated auth payload
+      userAuthPayload: JSON.stringify(signature.data), // For auth endpoints
+      // OR
+      userAuthPayload: signature.data, // For natural-request endpoint
+      accountNFT: {
+        "collectionID": "0",
+        "nftID": "53"
+      },
+      // Add endpoint-specific parameters
+      prompt: "Your test prompt here"
+    });
+
+    console.log('✅ Test Success:', response.data);
+    
+  } catch (error) {
+    console.error('❌ Test Failed:', error.response?.data || error.message);
+  }
+}
+
+test[FeatureName]();
+```
+
+### **Testing Best Practices**
+- **Use ts-node** to run test scripts: `npx ts-node test-script.ts`
+- **Include comprehensive test cases** for all supported actions
+- **Test both success and failure scenarios**
+- **Provide clear console output** with ✅/❌ indicators
+- **Include setup instructions** in test script comments
+- **Test auth flow first**, then natural requests
+
+### **Example Test Commands (Using Scripts Only)**
+```bash
+# ✅ CORRECT - Using test scripts
+npx ts-node test-auth-link.ts
+npx ts-node test-natural-requests.ts
+npx ts-node test-specific-feature.ts
+
+# ❌ WRONG - Using manual tools
+curl -X POST http://localhost:3000/auth-link  # DON'T DO THIS
+# Postman requests                            # DON'T DO THIS
+```
+
+## 9. Project Structure
+- All authentication logic for third-party apps must be implemented as a subclass of `AuthService` in `src/services/`.
+- No code or tests should reference or import socket.io or websocket libraries.
+
+## 10. OAuth Callback Security Requirements
+- **Callback URLs must NOT have any authentication middleware** (no auth tokens, no user validation)
+- The callback endpoint should be publicly accessible to receive OAuth responses from third-party services
+- **Security is handled through state verification**: Compare received state/code with temporary auth state stored during auth link generation
+- **Callback flow**:
+  1. User initiates auth via `/auth-link` → generates temporary state and redirects to OAuth provider
+  2. OAuth provider redirects to `/auth/callback` with code and state
+  3. Callback endpoint verifies state matches stored temporary state
+  4. Exchange code for tokens and save auth data using `authService.saveAuth()`
+  5. Clean up temporary state and redirect user to success page
+
+### **Example Callback Implementation (No Auth Required)**
+```typescript
+// ❌ WRONG - Callback with authentication
+app.get('/auth/callback', authenticateUser, async (req, res) => { ... });
+
+// ✅ CORRECT - Callback without authentication
+app.get('/auth/callback', async (req: Request, res: Response) => {
+  const { code, state } = req.query;
+  
+  // Verify state matches stored temporary state
+  const storedState = await getTemporaryState(state as string);
+  if (!storedState) {
+    return res.status(400).send('Invalid or expired state');
+  }
+  
+  // Exchange code for tokens
+  const tokens = await exchangeCodeForTokens(code as string);
+  
+  // Save auth data
+  await authService.saveAuth(storedState.userAddress, storedState.nftId, tokens);
+  
+  // Clean up temporary state
+  await cleanupTemporaryState(state as string);
+  
+  // Redirect to success page
+  res.redirect('/auth-success');
+});
+```
+
+## 11. Required Testing Scripts
+- **Always provide test scripts** for every third-party service implementation
+- **Two-phase testing approach**:
+
+### **Phase 1: Auth Link Generation Test**
+Create a test script that generates and displays the auth link for users to authorize:
+
+```typescript
+// test-auth-link.ts
+import axios from 'axios';
+import { getSkyNode } from './src/clients/skynet';
+
+async function testAuthLink() {
+  const skyNode = await getSkyNode();
+  const signature = await skyNode.appManager.getUrsulaAuth();
+  
+  try {
+    const response = await axios.post('http://localhost:3000/auth-link', {
+      userAuthPayload: JSON.stringify(signature.data),
+      accountNFT: JSON.stringify({
+        "collectionID": "0",
+        "nftID": "53"
+      })
+    });
+
+    console.log('🔗 Auth Link Generated:');
+    console.log(response.data.authLink);
+    console.log('\n📋 Instructions:');
+    console.log('1. Copy the auth link above');
+    console.log('2. Open it in your browser');
+    console.log('3. Complete the authorization process');
+    console.log('4. Run the natural request tests after authorization');
+    
+  } catch (error) {
+    console.error('❌ Auth Link Generation Failed:', error.response?.data || error.message);
+  }
+}
+
+testAuthLink();
+```
+
+### **Phase 2: Natural Request Action Tests**
+After successful authorization, test all supported actions through `/natural-request`:
+
+```typescript
+// test-natural-requests.ts
+import axios from 'axios';
+import { getSkyNode } from './src/clients/skynet';
+
+async function testNaturalRequests() {
+  const skyNode = await getSkyNode();
+  const signature = await skyNode.appManager.getUrsulaAuth();
+  
+  const testCases = [
+    {
+      name: "Service Analysis",
+      prompt: "Analyze my account activity and provide insights"
+    },
+    {
+      name: "Content Generation",
+      prompt: "Generate a professional post about AI trends"
+    },
+    {
+      name: "Data Retrieval",
+      prompt: "Get my recent activity data and summarize it"
+    }
+    // Add service-specific test cases
+  ];
+
+  for (const testCase of testCases) {
+    console.log(`\n🧪 Testing: ${testCase.name}`);
+    
+    try {
+      const response = await axios.post('http://localhost:3000/natural-request', {
+        prompt: testCase.prompt,
+        userAuthPayload: signature.data,
+        accountNFT: {
+          "collectionID": "0",
+          "nftID": "53"
+        }
+      });
+
+      console.log(`✅ ${testCase.name} Success:`, response.data.data?.result);
+      
+    } catch (error) {
+      console.error(`❌ ${testCase.name} Failed:`, error.response?.data || error.message);
+    }
+  }
+}
+
+testNaturalRequests();
+```
+
+### **Testing Script Requirements**
+- **Use simple TypeScript with axios** (no testing frameworks)
+- **Include comprehensive test cases** covering all service actions
+- **Provide clear instructions** for manual authorization steps
+- **Test both success and error scenarios**
+- **Include example prompts** for each supported action
+
+## 12. Required Dependencies (Exact Versions)
+```json
+{
+  "dependencies": {
+    "@decloudlabs/skynet": "0.6.25",
+    "@decloudlabs/sky-ai-accesspoint": "0.3.10",
+    "@ethersproject/wallet": "^5.7.0",
+    "@supabase/supabase-js": "^2.39.0",
+    "axios": "^1.9.0",
+    "ethers": "^6.15.0",
+    "express": "^4.19.2",
+    "firebase-admin": "^13.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
+    "openai": "^4.70.2",
+    "pg": "^8.15.6"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.0",
+    "@types/multer": "^1.4.12",
+    "@types/pg": "^8.15.0",
+    "nodemon": "^3.1.7",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.0.0"
+  }
+}
+```
+
+## 13. Correct Import Patterns (Updated v0.3.10)
+
+### **Main Package Imports**
+```typescript
+// ✅ CORRECT: Import from main package
+import { initAIAccessPoint, getAuthService } from "@decloudlabs/sky-ai-accesspoint";
+
+// ❌ WRONG: Don't use lib/init path
+import { initAIAccessPoint } from "@decloudlabs/sky-ai-accesspoint/lib/init";
+```
+
+### **Type Imports**
+```typescript
+// ✅ CORRECT: Import types from specific paths
+import { EnhancedBalanceRunMain } from "@decloudlabs/sky-ai-accesspoint/lib/core/init";
+import { ResponseHandler } from "@decloudlabs/sky-ai-accesspoint/lib/types/types";
+import { AuthService } from "@decloudlabs/sky-ai-accesspoint/lib/auth/authService";
+
+// ❌ WRONG: Don't import types from main package
+import { ResponseHandler } from "@decloudlabs/sky-ai-accesspoint";
+```
+
+### **Complete Import Example**
+```typescript
+import dotenv from "dotenv";
+dotenv.config();
+import express, { Request, Response } from "express";
+import SkyMainNodeJS from "@decloudlabs/skynet/lib/services/SkyMainNodeJS";
+import { getSkyNode } from "./clients/skynet";
+import { initAIAccessPoint } from "@decloudlabs/sky-ai-accesspoint";
+import { EnhancedBalanceRunMain } from "@decloudlabs/sky-ai-accesspoint/lib/core/init";
+import { ResponseHandler } from "@decloudlabs/sky-ai-accesspoint/lib/types/types";
+import cors from "cors";
+import bodyParser from "body-parser";
+import multer from "multer";
+```
+
+### **Function Signature**
+```typescript
+// ✅ CORRECT: Use EnhancedBalanceRunMain type
+const runNaturalFunction = async (
+  req: Request,
+  res: Response,
+  balanceRunMain: EnhancedBalanceRunMain,
+  responseHandler: ResponseHandler
+): Promise<void> => {
+  // Implementation
+};
+
+// ❌ WRONG: Don't use BalanceRunMain directly
+const runNaturalFunction = async (
+  req: Request,
+  res: Response,
+  balanceRunMain: BalanceRunMain, // This will cause import errors
+  responseHandler: ResponseHandler
+): Promise<void> => {
+  // Implementation
+};
+```
+
+## 14. Required Skynet Client Setup (Fixed Code)
+```typescript
+import SkyMainNodeJS from '@decloudlabs/skynet/lib/services/SkyMainNodeJS';
+import SkyEnvConfigNodeJS from '@decloudlabs/skynet/lib/types/types';
+import dotenv from 'dotenv';
+dotenv.config();
+
+let initializedAppCrypto: SkyMainNodeJS;
+
+const initializeSkyNodeCrypto = async (): Promise<SkyMainNodeJS> => {
+    if (!initializedAppCrypto) {
+        const envConfig: SkyEnvConfigNodeJS = {
+            JRPC_PROVIDER: process.env.PROVIDER_RPC!,
+            WALLET_PRIVATE_KEY: process.env.WALLET_PRIVATE_KEY!,
+            STORAGE_API: {
+                LIGHTHOUSE: {
+                    LIGHTHOUSE_API_KEY: process.env.LIGHTHOUSE_API_KEY!
+                },
+                IPFS: {
+                    PROJECT_ID: process.env.IPFS_PROJECT_ID!,
+                    PROJECT_SECRET: process.env.IPFS_PROJECT_SECRET!
+                },
+                CLOUD: {
+                    BUCKET_NAME: process.env.CLOUD_BUCKET_NAME!,
+                    ACCESS_KEY_ID: process.env.CLOUD_ACCESS_KEY_ID!,
+                    SECRET_ACCESS_KEY: process.env.CLOUD_SECRET_ACCESS_KEY!,
+                    REGION: process.env.CLOUD_REGION!
+                }
+            }
+        };
+        initializedAppCrypto = new SkyMainNodeJS(envConfig);
+        await initializedAppCrypto.init(true);
+    }
+    return initializedAppCrypto;
+};
+
+export const getSkyNode = async (): Promise<SkyMainNodeJS> => {
+    return await initializeSkyNodeCrypto();
+};
+```
+
+**Note:** Storage API environment variables (LIGHTHOUSE_API_KEY, IPFS_PROJECT_ID, etc.) are optional and can be any placeholder string if not needed.
+
+## 15. Main Access Point Initialization
+
+### Option A: With File Upload Support
+```typescript
+import dotenv from "dotenv";
+dotenv.config();
+import express, { Request, Response } from "express";
+import SkyMainNodeJS from "@decloudlabs/skynet/lib/services/SkyMainNodeJS";
+import { getSkyNode } from "./clients/skynet";
+import { initAIAccessPoint } from "@decloudlabs/sky-ai-accesspoint";
+import { EnhancedBalanceRunMain } from "@decloudlabs/sky-ai-accesspoint/lib/core/init";
+import { ResponseHandler } from "@decloudlabs/sky-ai-accesspoint/lib/types/types";
+import cors from "cors";
+import bodyParser from "body-parser";
+import multer from "multer";
+
+const app = express();
+app.use(cors());
+app.use(bodyParser.json());
+const port = process.env.PORT || 3000;
+
+// File upload configuration for multipart form data
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 50 * 1024 * 1024, // 50MB limit
+  },
+});
+
+// Natural function with file upload support
+const runNaturalFunction = async (
+  req: Request,
+  res: Response,
+  balanceRunMain: EnhancedBalanceRunMain,
+  responseHandler: ResponseHandler
+): Promise<void> => {
+  try {
+    const { prompt, accountNFT, userAuthPayload } = req.body;
+    const files = req.files as Express.Multer.File[]; // Files from multipart form
+
+    // Send progress update
+    responseHandler.sendUpdate("Processing your request with files...");
+
+    // Handle uploaded files
+    if (files && files.length > 0) {
+      responseHandler.sendUpdate(`Processing ${files.length} uploaded files...`);
+      files.forEach((file, index) => {
+        console.log(`File ${index + 1}: ${file.originalname}, Size: ${file.size} bytes`);
+      });
+    }
+
+    // Use AI model with simplified parameters
+    const completion = await balanceRunMain.callAIModel(
+      {
+        prompt: prompt,
+        system_prompt: "You are a helpful assistant that processes files and requests.",
+        temperature: 0.7,
+        response_type: 'json_object'
+      },
+      accountNFT
+    );
+
+    if (!completion.success) {
+      responseHandler.sendError(completion.message, 500);
+      return;
+    }
+
+    // Parse AI response
+    let result;
+    try {
+      result = JSON.parse(completion.message || "");
+    } catch (parseError) {
+      result = { result: completion.message };
+    }
+
+    // Calculate cost (example: 0.01 tokens per request + 0.001 per file)
+    const baseCost = BigInt(0.01 * 1e12);
+    const fileCost = BigInt((files?.length || 0) * 0.001 * 1e12);
+    const totalCost = baseCost + fileCost;
+    
+    // Send final response
+    responseHandler.sendFinalResponse({
+      success: true,
+      message: "Request completed successfully",
+      data: {
+        result: result,
+        filesProcessed: files?.length || 0,
+        timestamp: new Date().toISOString()
+      }
+    });
+
+    // Add cost using wallet address
+    await balanceRunMain.addCost(userAuthPayload.userAddress, totalCost.toString());
+
+  } catch (error) {
+    console.error("Error processing request:", error);
+    responseHandler.sendError(
+      error instanceof Error ? error.message : "Failed to process request",
+      500
+    );
+  }
+};
+
+const setup = async () => {
+  const skyNode: SkyMainNodeJS = await getSkyNode();
+  const env = {
+    JSON_RPC_PROVIDER: process.env.PROVIDER_RPC!,
+    WALLET_PRIVATE_KEY: process.env.WALLET_PRIVATE_KEY!,
+    SUBNET_ID: process.env.SUBNET_ID!,
+    POSTGRES_URL: process.env.DATABASE_URL!,
+    SERVER_COST_CONTRACT_ADDRESS: process.env.SERVER_COST_CONTRACT_ADDRESS!,
+  };
+
+  const balanceRunMain = await initAIAccessPoint(
+    env,
+    skyNode,
+    app,
+    runNaturalFunction,
+    true, // Enable balance updates
+    upload, // File upload middleware (required for upload support)
+    {
+      // Optional: Pass custom auth service here
+      // authServiceClass: MyCustomAuthService
+    }
+  );
+
+  if (!balanceRunMain.success) {
+    console.error("Error initializing AI Access Point:", balanceRunMain);
+    process.exit(1);
+  }
+
+  // Simple health check endpoint
+  app.get('/health', (req: Request, res: Response) => {
+    res.json({ 
+      status: 'healthy', 
+      uploadSupport: true,
+      timestamp: new Date().toISOString()
+    });
+  });
+
+  app.listen(port, () => {
+    console.log(`Service is running on http://localhost:${port}`);
+    console.log(`Health check: http://localhost:${port}/health`);
+  });
+};
+
+setup().catch(console.error);
+```
+
+### Option B: Without File Upload Support
+```typescript
+import dotenv from "dotenv";
+dotenv.config();
+import express, { Request, Response } from "express";
+import SkyMainNodeJS from "@decloudlabs/skynet/lib/services/SkyMainNodeJS";
+import { getSkyNode } from "./clients/skynet";
+import { initAIAccessPoint } from "@decloudlabs/sky-ai-accesspoint";
+import { EnhancedBalanceRunMain } from "@decloudlabs/sky-ai-accesspoint/lib/core/init";
+import { ResponseHandler } from "@decloudlabs/sky-ai-accesspoint/lib/types/types";
+import cors from "cors";
+import bodyParser from "body-parser";
+
+const app = express();
+app.use(cors());
+app.use(bodyParser.json());
+const port = process.env.PORT || 3000;
+
+// Natural function without file upload support
+const runNaturalFunction = async (
+  req: Request,
+  res: Response,
+  balanceRunMain: EnhancedBalanceRunMain,
+  responseHandler: ResponseHandler
+): Promise<void> => {
+  try {
+    const { prompt, accountNFT, userAuthPayload } = req.body;
+
+    // Send progress update
+    responseHandler.sendUpdate("Processing your request...");
+
+    // Use AI model with simplified parameters
+    const completion = await balanceRunMain.callAIModel(
+      {
+        prompt: prompt,
+        system_prompt: "You are a helpful assistant.",
+        temperature: 0.7,
+        response_type: 'json_object'
+      },
+      accountNFT
+    );
+
+    if (!completion.success) {
+      responseHandler.sendError(completion.message, 500);
+      return;
+    }
+
+    // Parse AI response
+    let result;
+    try {
+      result = JSON.parse(completion.message || "");
+    } catch (parseError) {
+      result = { result: completion.message };
+    }
+
+    // Calculate cost (example: 0.01 tokens per request)
+    const cost = BigInt(0.01 * 1e12);
+    
+    // Send final response
+    responseHandler.sendFinalResponse({
+      success: true,
+      message: "Request completed successfully",
+      data: {
+        result: result,
+        timestamp: new Date().toISOString()
+      }
+    });
+
+    // Add cost using wallet address
+    await balanceRunMain.addCost(userAuthPayload.userAddress, cost.toString());
+
+  } catch (error) {
+    console.error("Error processing request:", error);
+    responseHandler.sendError(
+      error instanceof Error ? error.message : "Failed to process request",
+      500
+    );
+  }
+};
+
+const setup = async () => {
+  const skyNode: SkyMainNodeJS = await getSkyNode();
+  const env = {
+    JSON_RPC_PROVIDER: process.env.PROVIDER_RPC!,
+    WALLET_PRIVATE_KEY: process.env.WALLET_PRIVATE_KEY!,
+    SUBNET_ID: process.env.SUBNET_ID!,
+    POSTGRES_URL: process.env.DATABASE_URL!,
+    SERVER_COST_CONTRACT_ADDRESS: process.env.SERVER_COST_CONTRACT_ADDRESS!,
+  };
+
+  const balanceRunMain = await initAIAccessPoint(
+    env,
+    skyNode,
+    app,
+    runNaturalFunction,
+    true, // Enable balance updates
+    undefined, // No upload middleware (no file upload support)
+    {
+      // Optional: Pass custom auth service here
+      // authServiceClass: MyCustomAuthService
+    }
+  );
+
+  if (!balanceRunMain.success) {
+    console.error("Error initializing AI Access Point:", balanceRunMain);
+    process.exit(1);
+  }
+
+  // Simple health check endpoint
+  app.get('/health', (req: Request, res: Response) => {
+    res.json({ 
+      status: 'healthy', 
+      uploadSupport: false,
+      timestamp: new Date().toISOString()
+    });
+  });
+
+  app.listen(port, () => {
+    console.log(`Service is running on http://localhost:${port}`);
+    console.log(`Health check: http://localhost:${port}/health`);
+  });
+};
+
+setup().catch(console.error);
+```
+
+## 16. Data Storage Service
+
+### **Internal Storage Function**
+Access points can store data using the internal function:
+
+```typescript
+import { getDataStorageService } from 'ai-access-package';
+
+const dataStorageService = getDataStorageService();
+await dataStorageService?.storeData(
+  'service-name',
+  'collection-id', 
+  'nft-id',
+  'reference-id',
+  { data: 'to store' }
+);
+```
+
+### **Fetch Data Endpoint**
+Use the API endpoint to retrieve stored data:
+
+```bash
+GET /fetch-data/:referenceId
+```
+
+Response:
+```json
+{
+  "success": true,
+  "data": {
+    "serviceName": "string",
+    "data": "any",
+    "createdAt": "date",
+    "updatedAt": "date"
+  }
+}
+```
+
+## 17. Final Testing Rule: Build and Test After Setup
+
+### **MANDATORY: Test Your Implementation**
+After completing your AI Access Point setup, you **MUST** test it with the following steps:
+
+### **Step 1: Build the Project**
+```bash
+# Build TypeScript to JavaScript
+npm run build
+
+# Verify build was successful
+ls lib/
+# Should show compiled JavaScript files
+```
+
+### **Step 2: Create Test File**
+Create a single `test.ts` file in your project root:
+
+```typescript
+// test.ts - Single comprehensive test file
+import axios from 'axios';
+import FormData from 'form-data';
+import fs from 'fs';
+import { getSkyNode } from "./src/clients/skynet";
+
+// Test functions return boolean (true = pass, false = fail)
+async function testAuthLink() {
+  try {
+    const skyNode = await getSkyNode();
+    const signature = await skyNode.appManager.getUrsulaAuth();
+    
+    console.log("🔐 Testing auth link generation...");
+    
+    const response = await axios.post('http://localhost:3000/auth-link', {
+      userAuthPayload: JSON.stringify(signature.data),
+      accountNFT: JSON.stringify({
+        "collectionID": "0",
+        "nftID": "53"
+      })
+    });
+    
+    if (response.status === 200 && response.data.success && response.data.data?.link) {
+      console.log("✅ Auth link test passed");
+      console.log("Auth URL:", response.data.data.link);
+      return true;
+    } else {
+      console.log("❌ Auth link test failed:", response.data);
+      return false;
+    }
+  } catch (error) {
+    console.log("❌ Auth link test error:", error.response?.data || error.message);
+    return false;
+  }
+}
+
+// Test natural request (JSON objects allowed)
+async function testNaturalRequest() {
+  try {
+    const skyNode = await getSkyNode();
+    const signature = await skyNode.appManager.getUrsulaAuth();
+    
+    console.log("🤖 Testing natural request...");
+    
+    const response = await axios.post('http://localhost:3000/natural-request', {
+      prompt: "Test request - analyze example.com",
+      userAuthPayload: signature.data,
+      accountNFT: {
+        "collectionID": "0",
+        "nftID": "53"
+      }
+    });
+    
+    if (response.status === 200 && response.data.success) {
+      console.log("✅ Natural request test passed");
+      console.log("Response:", response.data.data);
+      return true;
+    } else {
+      console.log("❌ Natural request test failed:", response.data);
+      return false;
+    }
+  } catch (error) {
+    console.log("❌ Natural request test error:", error.response?.data || error.message);
+    return false;
+  }
+}
+
+// Test file upload (if supported)
+async function testUpload() {
+  try {
+    const skyNode = await getSkyNode();
+    const signature = await skyNode.appManager.getUrsulaAuth();
+    
+    console.log("📁 Testing file upload...");
+    
+    // Create test file if it doesn't exist
+    if (!fs.existsSync('./test-file.txt')) {
+      fs.writeFileSync('./test-file.txt', 'This is a test file for upload testing');
+    }
+    
+    const formData = new FormData();
+    formData.append('files', fs.createReadStream('./test-file.txt'), {
+      filename: 'test-file.txt',
+      contentType: 'text/plain'
+    });
+    formData.append('prompt', JSON.stringify("Analyze the uploaded file"));
+    formData.append('userAuthPayload', JSON.stringify(signature.data));
+    formData.append('accountNFT', JSON.stringify({
+      "collectionID": "0",
+      "nftID": "53"
+    }));
+
+    const response = await axios.post('http://localhost:3000/natural-request', formData, {
+      headers: {
+        ...formData.getHeaders(),
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+    
+    if (response.status === 200 && response.data.success) {
+      console.log("✅ Upload test passed");
+      return true;
+    } else {
+      console.log("❌ Upload test failed:", response.data);
+      return false;
+    }
+  } catch (error) {
+    if (error.response?.status === 400 && error.response?.data?.message?.includes('upload')) {
+      console.log("ℹ️ Upload not supported (expected for non-upload setup)");
+      return true; // Not a failure if upload is not supported
+    }
+    console.log("❌ Upload test error:", error.response?.data || error.message);
+    return false;
+  }
+}
+
+// Test streaming
+async function testStreaming() {
+  try {
+    const skyNode = await getSkyNode();
+    const signature = await skyNode.appManager.getUrsulaAuth();
+    
+    console.log("📡 Testing streaming...");
+    
+    const response = await axios.post('http://localhost:3000/natural-request?stream=true', {
+      prompt: "Generate a long response with streaming",
+      userAuthPayload: signature.data,
+      accountNFT: {
+        "collectionID": "0",
+        "nftID": "53"
+      }
+    }, {
+      responseType: 'stream'
+    });
+    
+    if (response.status === 200 && response.headers['content-type']?.includes('text/event-stream')) {
+      console.log("✅ Streaming test passed");
+      
+      // Listen to stream data
+      response.data.on('data', (chunk: Buffer) => {
+        const lines = chunk.toString().split('\n');
+        lines.forEach(line => {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.type === 'update') {
+                console.log('📡 Stream update:', data.message);
+              } else if (data.type === 'final') {
+                console.log('📡 Stream final:', data.data);
+              }
+            } catch (e) {
+              // Ignore parse errors for incomplete chunks
+            }
+          }
+        });
+      });
+      
+      return true;
+    } else {
+      console.log("❌ Streaming test failed");
+      return false;
+    }
+  } catch (error) {
+    console.log("❌ Streaming test error:", error.response?.data || error.message);
+    return false;
+  }
+}
+
+// Test health endpoint
+async function testHealth() {
+  try {
+    console.log("🏥 Testing health endpoint...");
+    
+    const response = await axios.get('http://localhost:3000/health');
+    
+    if (response.status === 200 && response.data.status === 'healthy') {
+      console.log("✅ Health test passed");
+      console.log("Health status:", response.data);
+      return true;
+    } else {
+      console.log("❌ Health test failed:", response.data);
+      return false;
+    }
+  } catch (error) {
+    console.log("❌ Health test error:", error.response?.data || error.message);
+    return false;
+  }
+}
+
+// Main test runner
+async function runAllTests() {
+  console.log("🚀 Starting comprehensive test suite...\n");
+  
+  const results = {
+    health: await testHealth(),
+    auth: await testAuthLink(),
+    natural: await testNaturalRequest(),
+    upload: await testUpload(),
+    streaming: await testStreaming()
+  };
+
+  console.log("\n📊 Test Results:");
+  console.log("Health Check:", results.health ? "✅ PASS" : "❌ FAIL");
+  console.log("Auth Link:", results.auth ? "✅ PASS" : "❌ FAIL");
+  console.log("Natural Request:", results.natural ? "✅ PASS" : "❌ FAIL");
+  console.log("File Upload:", results.upload ? "✅ PASS" : "❌ FAIL");
+  console.log("Streaming:", results.streaming ? "✅ PASS" : "❌ FAIL");
+
+  const allPassed = Object.values(results).every(result => result);
+  console.log("\n🎯 Overall Result:", allPassed ? "✅ ALL TESTS PASSED" : "❌ SOME TESTS FAILED");
+  
+  if (allPassed) {
+    console.log("\n🎉 Your AI Access Point is working correctly!");
+    console.log("✅ Ready for production deployment");
+  } else {
+    console.log("\n⚠️ Some tests failed. Please check your implementation.");
+    console.log("🔧 Review the error messages above and fix any issues.");
+  }
+  
+  process.exit(allPassed ? 0 : 1);
+}
+
+// Run tests if this file is executed directly
+if (require.main === module) {
+  runAllTests();
+}
+
+export { runAllTests };
+```
+
+### **Step 3: Install Required Dependencies**
+```bash
+# Install test dependencies
+npm install axios form-data
+
+# For TypeScript testing
+npm install --save-dev ts-node @types/node
+```
+
+### **Step 4: Start Your Server**
+```bash
+# Start your server in one terminal
+npm run dev
+# or
+npm start
+```
+
+### **Step 5: Run the Test Script**
+```bash
+# In another terminal, run the test
+npx ts-node test.ts
+```
+
+### **Expected Test Output**
+```
+🚀 Starting comprehensive test suite...
+
+🏥 Testing health endpoint...
+✅ Health test passed
+Health status: { status: 'healthy', timestamp: '2024-01-01T00:00:00.000Z' }
+
+🔐 Testing auth link generation...
+✅ Auth link test passed
+Auth URL: https://oauth.provider.com/auth?client_id=...
+
+🤖 Testing natural request...
+✅ Natural request test passed
+Response: { result: 'Analyzing: example.com', extractedParams: {...} }
+
+📁 Testing file upload...
+✅ Upload test passed
+
+📡 Testing streaming...
+✅ Streaming test passed
+📡 Stream update: Processing your request...
+📡 Stream final: { result: 'Generated content...' }
+
+📊 Test Results:
+Health Check: ✅ PASS
+Auth Link: ✅ PASS
+Natural Request: ✅ PASS
+File Upload: ✅ PASS
+Streaming: ✅ PASS
+
+🎯 Overall Result: ✅ ALL TESTS PASSED
+```
+
+### **Final Checklist**
+- ✅ **Build successful** - `npm run build` completes without errors
+- ✅ **Server starts** - `npm run dev` starts without errors
+- ✅ **Health endpoint** - `GET /health` returns 200
+- ✅ **Auth link generation** - `POST /auth-link` returns valid URL
+- ✅ **Natural request** - `POST /natural-request` processes requests
+- ✅ **File upload** - `POST /natural-request` with FormData works (if supported)
+- ✅ **Streaming** - `POST /natural-request?stream=true` returns SSE
+- ✅ **All tests pass** - `npx ts-node test.ts` shows all ✅ PASS
+
+**Remember:** This comprehensive test ensures your AI Access Point is fully functional and ready for real-world use!
