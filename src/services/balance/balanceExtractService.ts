@@ -1,20 +1,13 @@
 import { APICallReturn } from "@decloudlabs/skynet/lib/types/types";
 import ENVConfig from "../../core/envConfig";
-import SkynetFractionalPaymentService from "../payment/skynetFractionalPaymentService";
 import { Pool } from "pg";
-
-const BATCH_SIZE = 10; // Process 10 NFTs at a time
-const MAX_RETRIES = 3;
-const RETRY_DELAY = 1000; // 1 second
 
 export default class BalanceExtractService {
   private pool: Pool;
-  private paymentService: SkynetFractionalPaymentService;
   private baseCostCache: Map<string, string> = new Map(); // Cache base costs by backend_id
 
   constructor(pool: Pool) {
     this.pool = pool;
-    this.paymentService = new SkynetFractionalPaymentService();
   }
 
   /**
@@ -107,34 +100,10 @@ export default class BalanceExtractService {
     }
   }
 
-  private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
-  private async retryOperation<T>(
-    operation: () => Promise<T>,
-    retries = MAX_RETRIES
-  ): Promise<T> {
-    let lastError: Error | undefined;
-
-    for (let i = 0; i < retries; i++) {
-      try {
-        return await operation();
-      } catch (error) {
-        lastError = error as Error;
-        console.error(`❌ Attempt ${i + 1} failed:`, error);
-        if (i < retries - 1) {
-          await this.delay(RETRY_DELAY * Math.pow(2, i)); // Exponential backoff
-        }
-      }
-    }
-
-    throw lastError || new Error("Operation failed after retries");
-  }
 
 
   /**
-   * Add cost to database for later batch processing
+   * Add cost to database for settlement processing
    * @param walletAddress - User's wallet address (stored as wallet_address in database)
    * @param amount - Cost amount in wei (service cost only, base cost will be added automatically)
    * @param backendId - Backend identifier to fetch base cost
@@ -185,120 +154,6 @@ export default class BalanceExtractService {
     }
   };
 
-  private async processBatch(pendingCostsBatch: any[]): Promise<void> {
-    const results = {
-      successful: 0,
-      failed: 0,
-      errors: [] as string[]
-    };
-
-    for (const pendingCost of pendingCostsBatch) {
-      try {
-        const { wallet_address: userAddress, amount } = pendingCost;
-        // Get user's total balance
-        const totalBalanceResponse = await this.paymentService.getUserTotalBalance(userAddress);
-        if (!totalBalanceResponse.success) {
-          results.failed++;
-          results.errors.push(`Failed to check balance for ${userAddress}: ${totalBalanceResponse.data}`);
-          continue;
-        }
-
-        const { totalBalance } = totalBalanceResponse.data;
-        const requiredAmount = BigInt(amount);
-
-        // If user doesn't have enough balance, charge whatever they have and clear pending
-        if (totalBalance < requiredAmount) {
-          console.log(`⚠️ Insufficient balance for ${userAddress}. Has: ${totalBalance} wei, Required: ${requiredAmount} wei. Charging available balance and clearing pending.`);
-          
-          if (totalBalance > 0) {
-            // Charge whatever balance they have
-            const chargeResponse = await this.retryOperation(() =>
-              this.paymentService.chargeForServices(userAddress, totalBalance.toString())
-            );
-
-            if (chargeResponse.success) {
-              console.log(`✅ Partially charged ${totalBalance} wei from user ${userAddress} (settled available balance)`);
-            } else {
-              console.error(`❌ Failed to charge available balance for ${userAddress}:`, chargeResponse.data);
-            }
-          }
-
-          // Clear pending costs from database regardless of charge success
-          await this.pool.query(
-            `UPDATE fractional_payments SET amount = '0', updated_at = CURRENT_TIMESTAMP WHERE wallet_address = $1`,
-            [userAddress]
-          );
-          results.successful++;
-          console.log(`✅ Cleared pending costs for ${userAddress} (insufficient balance, charged what was available)`);
-          continue;
-        }
-
-        // User has sufficient balance, charge the full amount
-        const chargeResponse = await this.retryOperation(() =>
-          this.paymentService.chargeForServices(userAddress, amount)
-        );
-
-        if (chargeResponse.success) {
-          // Reset the cost to 0 in database after successful charge
-          await this.pool.query(
-            `UPDATE fractional_payments SET amount = '0', updated_at = CURRENT_TIMESTAMP WHERE wallet_address = $1`,
-            [userAddress]
-          );
-          results.successful++;
-          console.log(`✅ Successfully charged ${amount} wei from user ${userAddress}`);
-        } else {
-          results.failed++;
-          results.errors.push(`Failed to charge ${userAddress}: ${chargeResponse.data}`);
-        }
-      } catch (error) {
-        results.failed++;
-        results.errors.push(`Error processing ${pendingCost.wallet_address}: ${error}`);
-      }
-    }
-
-    console.log(`📊 Batch processing completed: ${results.successful} successful, ${results.failed} failed`);
-    if (results.errors.length > 0) {
-      console.error("❌ Processing errors:", results.errors);
-    }
-  }
-
-  private scanNFTBalancesInternal = async () => {
-    try {
-      // Get all pending costs from fractional_payments table
-      const pendingCostsQuery = `
-        SELECT wallet_address, amount, created_at
-        FROM fractional_payments 
-        WHERE CAST(amount AS BIGINT) > 0
-        ORDER BY created_at ASC
-      `;
-      
-      const pendingCostsResult = await this.pool.query(pendingCostsQuery);
-      const pendingCosts = pendingCostsResult.rows;
-
-      if (pendingCosts.length === 0) {
-        console.log("ℹ️ No pending costs to process");
-        return;
-      }
-
-      console.log(`🔄 Processing ${pendingCosts.length} pending cost records...`);
-
-      // Process in batches
-      for (let i = 0; i < pendingCosts.length; i += BATCH_SIZE) {
-        const batch = pendingCosts.slice(i, i + BATCH_SIZE);
-        try {
-          await this.processBatch(batch);
-        } catch (error) {
-          console.error(
-            `❌ Failed to process batch starting at index ${i}:`,
-            error
-          );
-          // Continue with next batch even if this one failed
-        }
-      }
-    } catch (error) {
-      console.error("❌ Error in scanNFTBalancesInternal:", error);
-    }
-  };
 
   setup = async (backendId?: string): Promise<boolean> => {
     try {
@@ -312,14 +167,6 @@ export default class BalanceExtractService {
     } catch (error) {
       console.error("❌ Error setting up BalanceExtractService:", error);
       return false;
-    }
-  };
-
-  update = async (): Promise<void> => {
-    try {
-      await this.scanNFTBalancesInternal();
-    } catch (error) {
-      console.error("❌ Error in BalanceExtractService update:", error);
     }
   };
 }

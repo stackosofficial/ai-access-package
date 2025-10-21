@@ -1,6 +1,5 @@
 import { AIModelResponse, ENVDefinition, JsonSchema } from "../../types/types";
 import { AccountNFT, APICallReturn, UrsulaAuth } from "@decloudlabs/skynet/lib/types/types";
-import { sleep } from "@decloudlabs/skynet/lib/utils/utils";
 import BalanceExtractService from "./balanceExtractService";
 import ENVConfig from "../../core/envConfig";
 import { ethers } from "ethers";
@@ -10,18 +9,14 @@ import { validatePayload, validateStructuredOutput, AIModelCallParams } from "./
 import { Pool } from "pg";
 
 export default class BalanceRunMain {
-  RUN_DURATION: number;
-  nextRunTime: number;
   envConfig: ENVConfig;
   balanceExtractService: BalanceExtractService;
   signer: ethers.Wallet;
   jsonProvider: ethers.JsonRpcProvider;
   skyNode: SkyMainNodeJS;
 
-  constructor(env: ENVDefinition, extractCostTime: number, skyNode: SkyMainNodeJS, pool: Pool) {
-    this.RUN_DURATION = 5000;
+  constructor(env: ENVDefinition, skyNode: SkyMainNodeJS, pool: Pool) {
     this.envConfig = new ENVConfig(env);
-    this.nextRunTime = new Date().getTime();
 
     this.jsonProvider = new ethers.JsonRpcProvider(
       this.envConfig.env.JSON_RPC_PROVIDER,
@@ -33,17 +28,12 @@ export default class BalanceRunMain {
       this.jsonProvider
     );
 
-    this.balanceExtractService = new BalanceExtractService(
-      pool
-    );
+    this.balanceExtractService = new BalanceExtractService(pool);
     this.skyNode = skyNode;
   }
 
   setup = async () => {
     try {
-      const UPDATE_DURATION = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
-      this.RUN_DURATION = UPDATE_DURATION;
-
       // Initialize base cost for this backend during setup
       const backendId = process.env.BACKEND_ID || 'default';
       await this.balanceExtractService.setup(backendId);
@@ -56,23 +46,6 @@ export default class BalanceRunMain {
     }
   };
 
-  update = async () => {
-    while (true) {
-      {
-        const curTime = new Date().getTime();
-        const sleepDur = this.nextRunTime - curTime;
-        await sleep(sleepDur);
-        this.nextRunTime = new Date().getTime() + this.RUN_DURATION;
-      }
-
-      try {
-        await this.balanceExtractService.update();
-      } catch (err: any) {
-        const error: Error = err;
-        console.error("❌ Error in update:", error);
-      }
-    }
-  };
 
   addCost = async (
     walletAddress: string,
