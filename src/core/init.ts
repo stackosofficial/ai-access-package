@@ -167,15 +167,14 @@ export const initAIAccessPoint = async (
     await migration.migrateTables(fractionalTableSchemas);
 
     // Now create the balance service after tables exist
-    const balanceRunMain = new BalanceRunMain(env, 60 * 1000, skyNodeParam, pool);
+    const balanceRunMain = new BalanceRunMain(env, skyNodeParam, pool);
 
     // No longer need to get contract address from old system
     // We use hardcoded fractional contract address in SkynetFractionalPaymentService
 
     await balanceRunMain.setup();
-    if (runUpdate) {
-      balanceRunMain.update();
-    }
+    // Note: Settlement processing is now handled by a separate service
+    // The balance service only handles cost accumulation
 
     // Test the database connection
     try {
