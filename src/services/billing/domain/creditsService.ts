@@ -87,26 +87,18 @@ export const addCost = (
   ctx: CreditsContext,
   amountDollars: string
 ): TE.TaskEither<Error, void> => {
-  console.log(`[addCost] Called with amount: ${amountDollars} dollars, appName: ${ctx.appName}`);
   return pipe(
     roundDollarAmount(amountDollars),
-    TE.chain(roundedAmount => {
-      console.log(`[addCost] Rounded amount: ${roundedAmount} dollars`);
-      return dollarsToNumber(roundedAmount);
-    }),
-    TE.chain(serviceDollars => {
-      console.log(`[addCost] Service dollars: ${serviceDollars}, fetching base cost for app: ${ctx.appName}`);
-      return pipe(
+    TE.chain(roundedAmount => dollarsToNumber(roundedAmount)),
+    TE.chain(serviceDollars =>
+      pipe(
         repository.getBaseCost(ctx.appName),
         // Base cost is already in dollars
         TE.map(baseCostDollars => {
-          console.log(
-            `[addCost] Base cost: ${baseCostDollars} dollars, total: ${serviceDollars + baseCostDollars} dollars`
-          );
           return { serviceDollars, baseCostDollars, totalDollars: serviceDollars + baseCostDollars };
         })
-      );
-    }),
+      )
+    ),
     TE.chain(({ totalDollars }) =>
       TE.tryCatch(
         async () => {

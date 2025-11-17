@@ -67,8 +67,6 @@ export function createCreditsRepository(pool: Pool): CreditsRepository {
     getBaseCost(appName: string): TE.TaskEither<Error, number> {
       return TE.tryCatch(
         async () => {
-          console.log(`[getBaseCost] Looking up base cost for app: ${appName}`);
-
           // First, try to get existing base cost
           let [baseRow] = await db
             .select({ baseCostDollars: backendBaseCosts.baseCostDollars })
@@ -79,15 +77,11 @@ export function createCreditsRepository(pool: Pool): CreditsRepository {
           if (baseRow) {
             // Numeric type returns string, convert to number
             const cost = baseRow.baseCostDollars;
-            const costNum = cost !== undefined && cost !== null ? Number(cost) : 0;
-            console.log(`[getBaseCost] Found existing base cost: ${costNum} dollars`);
-            return costNum;
+            return cost !== undefined && cost !== null ? Number(cost) : 0;
           }
 
-          console.log(`[getBaseCost] Base cost not found, creating default for app: ${appName}`);
-
-          // If not found, create a default base cost of 0.1 dollars
-          const defaultBaseCostDollars = 0.1;
+          // If not found, create a default base cost of 0 dollars
+          const defaultBaseCostDollars = 0;
           try {
             const insertResult = await db
               .insert(backendBaseCosts)
@@ -99,13 +93,9 @@ export function createCreditsRepository(pool: Pool): CreditsRepository {
               .returning({ baseCostDollars: backendBaseCosts.baseCostDollars });
 
             if (insertResult.length > 0) {
-              console.log(`[getBaseCost] Successfully created base cost: ${defaultBaseCostDollars} dollars`);
               return defaultBaseCostDollars;
-            } else {
-              console.log(`[getBaseCost] Insert was skipped (conflict), re-querying...`);
             }
-          } catch (error) {
-            console.error(`[getBaseCost] Error inserting base cost:`, error);
+          } catch {
             // If insert fails, ignore and re-query (might have been created by another request)
           }
 
@@ -118,21 +108,13 @@ export function createCreditsRepository(pool: Pool): CreditsRepository {
 
           if (baseRow) {
             const cost = baseRow.baseCostDollars;
-            const costNum = cost !== undefined && cost !== null ? Number(cost) : defaultBaseCostDollars;
-            console.log(`[getBaseCost] Retrieved base cost after insert attempt: ${costNum} dollars`);
-            return costNum;
+            return cost !== undefined && cost !== null ? Number(cost) : defaultBaseCostDollars;
           }
 
           // Fallback to default if still not found (shouldn't happen)
-          console.warn(
-            `[getBaseCost] Base cost still not found after insert, using default: ${defaultBaseCostDollars} dollars`
-          );
           return defaultBaseCostDollars;
         },
-        error => {
-          console.error(`[getBaseCost] Error:`, error);
-          return error instanceof Error ? error : new Error('Failed to get base cost');
-        }
+        error => (error instanceof Error ? error : new Error('Failed to get base cost'))
       );
     },
 
