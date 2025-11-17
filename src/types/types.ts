@@ -1,5 +1,4 @@
-import { Request, Response } from "express";
-import { responseHandlerDataSchema, type ResponseHandlerData } from "./schemas";
+import { type ResponseHandlerData } from './schemas';
 
 // Re-export types and schemas from schemas.ts
 export {
@@ -19,7 +18,7 @@ export {
   type MultipartFormData,
   type AddCostOptions,
   type CreditsContext,
-} from "./schemas";
+} from './schemas';
 
 /**
  * Response Handler interface with Zod validation support

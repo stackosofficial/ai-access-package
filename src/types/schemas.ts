@@ -1,10 +1,10 @@
-import { z } from "zod";
+import { z } from 'zod';
 
 /**
  * Environment configuration schema
  */
 export const envDefinitionSchema = z.object({
-  POSTGRES_URL: z.string().url("POSTGRES_URL must be a valid URL"),
+  POSTGRES_URL: z.string().url('POSTGRES_URL must be a valid URL'),
   minimumBalance: z
     .string()
     .regex(
@@ -12,7 +12,7 @@ export const envDefinitionSchema = z.object({
       "minimumBalance must be a valid dollar value (whole number like '1' or decimal like '1.50')"
     )
     .optional(),
-  appName: z.string().min(1, "appName is required"),
+  appName: z.string().min(1, 'appName is required'),
 });
 
 /**
@@ -27,7 +27,7 @@ export const aiModelResponseSchema = z.object({
  * Request Payload schema - only prompt and system_prompt (API key in headers)
  */
 export const requestPayloadSchema = z.object({
-  prompt: z.string().min(1, "Prompt is required and cannot be empty"),
+  prompt: z.string().min(1, 'Prompt is required and cannot be empty'),
   system_prompt: z.string().optional(),
 });
 
@@ -41,7 +41,7 @@ export const responseHandlerDataSchema = z
     error: z.string().optional(),
   })
   .refine(
-    (data) => {
+    data => {
       // Either content (success) or error (failure) must be present
       if (data.success) {
         return !!data.content;
@@ -50,8 +50,7 @@ export const responseHandlerDataSchema = z
       }
     },
     {
-      message:
-        "Response must have 'content' when success is true, or 'error' when success is false",
+      message: "Response must have 'content' when success is true, or 'error' when success is false",
     }
   );
 
@@ -71,7 +70,7 @@ export const fileInputSchema = z.object({
  * Multipart form data schema
  */
 export const multipartFormDataSchema = z.object({
-  prompt: z.string().min(1, "Prompt is required and cannot be empty"),
+  prompt: z.string().min(1, 'Prompt is required and cannot be empty'),
   system_prompt: z.string().optional(),
   files: z.array(fileInputSchema).optional(),
 });
@@ -89,9 +88,9 @@ export const addCostOptionsSchema = z.object({
  * Credits Service - Credits Context schema (updated to use appName instead of backendId)
  */
 export const creditsContextSchema = z.object({
-  organisationId: z.string().uuid("organisationId must be a valid UUID"),
-  apiKeyId: z.string().uuid("apiKeyId must be a valid UUID").optional(),
-  appName: z.string().min(1, "appName is required"),
+  organisationId: z.string().uuid('organisationId must be a valid UUID'),
+  apiKeyId: z.string().uuid('apiKeyId must be a valid UUID').optional(),
+  appName: z.string().min(1, 'appName is required'),
 });
 
 /**

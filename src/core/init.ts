@@ -1,32 +1,24 @@
-import { executeAICall } from "../services/AIService/entrypoint";
-import type { RequestPayload } from "../types/schemas";
-import {
-  envDefinitionSchema,
-  type ENVDefinition,
-  ResponseHandler,
-  type ResponseHandlerData,
-} from "../types/types";
-import express, { Request, Response, NextFunction } from "express";
-import multer from "multer";
-import { Pool } from "pg";
-import { createDrizzleClient } from "../database/drizzleClient";
-import { lockEndpointsIfEnabled } from "../utils/lockEndpoints";
-import { createApiKeyAuthMiddleware } from "../middleware/apiKeyAuth";
-import { createCreditsService } from "../services/billing/creditsService";
+import express, { NextFunction, Request, Response } from 'express';
+import multer from 'multer';
+import { Pool } from 'pg';
+
+import { createDrizzleClient } from '../database/drizzleClient';
+import { createApiKeyAuthMiddleware } from '../middleware/auth';
+import { type AIModelResponse, executeAICall } from '../services/AIService/entrypoint';
+import { createCreditsService } from '../services/billing/creditsService';
+import type { RequestPayload } from '../types/schemas';
+import { responseHandlerDataSchema } from '../types/schemas';
+import { ResponseHandler, type ResponseHandlerData, envDefinitionSchema } from '../types/types';
 
 let globalPostgresUrl: string | null = null;
 
 // Global function to get PostgreSQL URL
 export const getGlobalPostgresUrl = (): string => {
   if (!globalPostgresUrl) {
-    throw new Error(
-      "PostgreSQL URL not initialized. Make sure to call initAIAccessPoint first."
-    );
+    throw new Error('PostgreSQL URL not initialized. Make sure to call initAIAccessPoint first.');
   }
   return globalPostgresUrl;
 };
-
-import { responseHandlerDataSchema } from "../types/schemas";
 
 // Response handler class to unify regular and streaming responses
 export class ResponseHandlerImpl implements ResponseHandler {
@@ -39,15 +31,23 @@ export class ResponseHandlerImpl implements ResponseHandler {
   constructor(req: Request, res: Response) {
     this.req = req;
     this.res = res;
-    this.isStreaming = req.query.stream === "true";
+    this.isStreaming = req.query.stream === 'true';
     this.hasStarted = false;
     this.hasEnded = false;
 
     // Setup streaming headers if needed
     if (this.isStreaming) {
-      res.setHeader("Content-Type", "text/event-stream");
-      res.setHeader("Cache-Control", "no-cache");
-      res.setHeader("Connection", "keep-alive");
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+    }
+  }
+
+  // Helper to safely flush response if available
+  private flushResponse(): void {
+    const resWithFlush = this.res as Response & { flush?: () => void };
+    if (typeof resWithFlush.flush === 'function') {
+      resWithFlush.flush();
     }
   }
 
@@ -59,7 +59,7 @@ export class ResponseHandlerImpl implements ResponseHandler {
 
     // Handle Buffer (file) - send as base64 in streaming
     if (Buffer.isBuffer(data)) {
-      const base64 = data.toString("base64");
+      const base64 = data.toString('base64');
       this.res.write(
         `data: ${JSON.stringify({
           success: true,
@@ -67,31 +67,25 @@ export class ResponseHandlerImpl implements ResponseHandler {
           isFile: true,
         })}\n\n`
       );
-      if (typeof (this.res as any).flush === "function") {
-        (this.res as any).flush();
-      }
+      this.flushResponse();
       return;
     }
 
     // Handle string
-    if (typeof data === "string") {
-      this.res.write(
-        `data: ${JSON.stringify({ success: true, content: data })}\n\n`
-      );
-      if (typeof (this.res as any).flush === "function") {
-        (this.res as any).flush();
-      }
+    if (typeof data === 'string') {
+      this.res.write(`data: ${JSON.stringify({ success: true, content: data })}\n\n`);
+      this.flushResponse();
       return;
     }
 
     // Handle ResponseHandlerData - validate with Zod
     const validation = responseHandlerDataSchema.safeParse(data);
     if (!validation.success) {
-      console.error("❌ Invalid response data:", validation.error);
+      console.error('❌ Invalid response data:', validation.error);
       this.res.write(
         `data: ${JSON.stringify({
           success: false,
-          error: "Invalid response format",
+          error: 'Invalid response format',
         })}\n\n`
       );
       return;
@@ -99,9 +93,7 @@ export class ResponseHandlerImpl implements ResponseHandler {
 
     this.res.write(`data: ${JSON.stringify(validation.data)}\n\n`);
     // Check if flush exists (some Express response objects include it via compression middleware)
-    if (typeof (this.res as any).flush === "function") {
-      (this.res as any).flush();
-    }
+    this.flushResponse();
   }
 
   // Send final response and end
@@ -113,19 +105,15 @@ export class ResponseHandlerImpl implements ResponseHandler {
     if (Buffer.isBuffer(data)) {
       // This shouldn't happen in final response for files, use sendFile instead
       // But handle it gracefully
-      this.res
-        .status(500)
-        .json({ success: false, error: "Use sendFile() for file responses" });
+      this.res.status(500).json({ success: false, error: 'Use sendFile() for file responses' });
       return;
     }
 
     // Handle string
-    if (typeof data === "string") {
+    if (typeof data === 'string') {
       const responseData = { success: true, content: data };
       if (this.isStreaming) {
-        this.res.write(
-          `data: ${JSON.stringify({ ...responseData, done: true })}\n\n`
-        );
+        this.res.write(`data: ${JSON.stringify({ ...responseData, done: true })}\n\n`);
         this.res.end();
       } else {
         this.res.json(responseData);
@@ -136,10 +124,8 @@ export class ResponseHandlerImpl implements ResponseHandler {
     // Handle ResponseHandlerData - validate with Zod
     const validation = responseHandlerDataSchema.safeParse(data);
     if (!validation.success) {
-      console.error("❌ Invalid response data:", validation.error);
-      this.res
-        .status(500)
-        .json({ success: false, error: "Invalid response format" });
+      console.error('❌ Invalid response data:', validation.error);
+      this.res.status(500).json({ success: false, error: 'Invalid response format' });
       return;
     }
 
@@ -147,9 +133,7 @@ export class ResponseHandlerImpl implements ResponseHandler {
 
     if (this.isStreaming) {
       // Final message for streaming
-      this.res.write(
-        `data: ${JSON.stringify({ ...responseData, done: true })}\n\n`
-      );
+      this.res.write(`data: ${JSON.stringify({ ...responseData, done: true })}\n\n`);
       this.res.end();
     } else {
       // Regular JSON response
@@ -162,12 +146,9 @@ export class ResponseHandlerImpl implements ResponseHandler {
     if (this.hasEnded) return;
     this.hasEnded = true;
 
-    this.res.setHeader("Content-Type", mimetype);
-    this.res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${filename}"`
-    );
-    this.res.setHeader("Content-Length", buffer.length.toString());
+    this.res.setHeader('Content-Type', mimetype);
+    this.res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    this.res.setHeader('Content-Length', buffer.length.toString());
     this.res.send(buffer);
   }
 
@@ -176,13 +157,11 @@ export class ResponseHandlerImpl implements ResponseHandler {
     if (this.hasEnded) return;
     this.hasEnded = true;
 
-    const errorMessage = typeof error === "string" ? error : error.message;
+    const errorMessage = typeof error === 'string' ? error : error.message;
     const errorResponse = { success: false, error: errorMessage };
 
     if (this.isStreaming) {
-      this.res.write(
-        `data: ${JSON.stringify({ ...errorResponse, done: true })}\n\n`
-      );
+      this.res.write(`data: ${JSON.stringify({ ...errorResponse, done: true })}\n\n`);
       this.res.end();
     } else {
       this.res.status(statusCode).json(errorResponse);
@@ -197,7 +176,7 @@ export class ResponseHandlerImpl implements ResponseHandler {
 
 // AI Service interface for compatibility
 export interface AIService {
-  callAIModel(params: RequestPayload): Promise<any>;
+  callAIModel(params: RequestPayload): Promise<AIModelResponse>;
 }
 
 // Define the type for the runNaturalFunction parameter to make it explicit
@@ -229,40 +208,38 @@ export const initAIAccessPoint = async (
     });
 
     // Initialize drizzle client (for new credits/requests system)
-    const db = createDrizzleClient(pool);
+    createDrizzleClient(pool);
 
     // Test the database connection
     try {
-      await pool.query("SELECT 1");
-      console.log("✅ Database connection established successfully");
+      await pool.query('SELECT 1');
+      console.log('✅ Database connection established successfully');
     } catch (error) {
-      console.error("❌ Database connection failed:", error);
-      throw new Error(`Database connection failed: ${error}`);
+      console.error('❌ Database connection failed:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Database connection failed: ${errorMessage}`);
     }
 
     // Initialize API-key auth and credits service
     const apiKeyAuth = createApiKeyAuthMiddleware(pool);
-    const creditsService = createCreditsService(pool);
+    createCreditsService(pool);
 
     // Handler function that wraps runNaturalFunction with ResponseHandler
-    const handleRequest = async (
-      req: Request,
-      res: Response,
-      next: NextFunction
-    ) => {
+    const handleRequest = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
       try {
         // Create AI service wrapper that automatically includes user's system prompt
         const aiService: AIService = {
           callAIModel: async (params: RequestPayload) => {
             // Get the current user system prompt from the request (in case it changed) - handles both JSON and form data
+            const body = req.body as Record<string, unknown>;
             const currentUserSystemPrompt =
-              req.body.systemPrompt ||
-              req.body.system_prompt ||
-              req.body["systemPrompt"] ||
-              req.body["system_prompt"];
+              (typeof body.systemPrompt === 'string' ? body.systemPrompt : null) ||
+              (typeof body.system_prompt === 'string' ? body.system_prompt : null) ||
+              (typeof body['systemPrompt'] === 'string' ? body['systemPrompt'] : null) ||
+              (typeof body['system_prompt'] === 'string' ? body['system_prompt'] : null);
 
             // Combine user's system prompt with any existing system prompt
-            let combinedSystemPrompt = params.system_prompt || "";
+            let combinedSystemPrompt = params.system_prompt || '';
             if (currentUserSystemPrompt) {
               combinedSystemPrompt = combinedSystemPrompt
                 ? `${combinedSystemPrompt}\n\n${currentUserSystemPrompt}`
@@ -285,54 +262,55 @@ export const initAIAccessPoint = async (
 
         const responseHandler = new ResponseHandlerImpl(req, res);
         await runNaturalFunction(req, res, aiService, responseHandler);
-      } catch (error: any) {
-        console.error("❌ Error in request handler:", error);
+      } catch (error: unknown) {
+        console.error('❌ Error in request handler:', error);
         if (!res.headersSent) {
-          res
-            .status(500)
-            .json({ error: error.message || "Internal server error" });
+          const errorMessage = error instanceof Error ? error.message : 'Internal server error';
+          res.status(500).json({ error: errorMessage });
         }
         next(error);
       }
     };
 
     // Setup single natural-request route (API key only)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const middlewares: any[] = [];
     if (upload) {
-      middlewares.push(upload.array("files"));
+      middlewares.push(upload.array('files'));
     }
     middlewares.push(apiKeyAuth);
     middlewares.push(handleRequest);
 
-    app.post("/natural-request", ...middlewares);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+    app.post('/natural-request', ...middlewares);
 
     // Add global error handling middleware
-    app.use((error: any, req: Request, res: Response, next: NextFunction) => {
-      console.error("❌ [GLOBAL ERROR HANDLER] Unhandled error:", error);
-      console.error("❌ [GLOBAL ERROR HANDLER] Stack trace:", error.stack);
+    app.use((error: unknown, _req: Request, res: Response, _next: NextFunction): void => {
+      console.error('❌ [GLOBAL ERROR HANDLER] Unhandled error:', error);
+      if (error instanceof Error) {
+        console.error('❌ [GLOBAL ERROR HANDLER] Stack trace:', error.stack);
+      }
 
       if (!res.headersSent) {
+        const errorMessage = error instanceof Error ? error.message : 'Internal server error';
         res.status(500).json({
           success: false,
-          error: "Internal server error",
-          message: error.message,
+          error: 'Internal server error',
+          message: errorMessage,
         });
       }
     });
 
     // Add 404 handler for unmatched routes
     app.use((req: Request, res: Response) => {
-      console.log("⚠️ [404 HANDLER] No route matched:", req.method, req.path);
+      console.log('⚠️ [404 HANDLER] No route matched:', req.method, req.path);
       res.status(404).json({
         success: false,
-        error: "Route not found",
+        error: 'Route not found',
       });
     });
 
-    // Security: Optionally lock dynamic endpoint creation
-    lockEndpointsIfEnabled(app);
-
-    console.log("✅ AI Access Point initialized successfully");
+    console.log('✅ AI Access Point initialized successfully');
     return {
       success: true,
       data: {
@@ -345,13 +323,12 @@ export const initAIAccessPoint = async (
         },
       } as AIService,
     };
-  } catch (error: any) {
-    console.error("❌ Error in initAIAccessPoint:", error);
+  } catch (error: unknown) {
+    console.error('❌ Error in initAIAccessPoint:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return {
       success: false,
-      error: new Error(
-        `Failed to initialize AI Access Point: ${error.message}`
-      ),
+      error: new Error(`Failed to initialize AI Access Point: ${errorMessage}`),
     };
   }
 };
