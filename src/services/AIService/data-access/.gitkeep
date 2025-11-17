@@ -1,0 +1,3 @@
+# This folder is reserved for database access using Drizzle ORM
+# Currently empty - will be populated when database operations are needed
+

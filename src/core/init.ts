@@ -1,42 +1,32 @@
-import SkyMainNodeJS from "@decloudlabs/skynet/lib/services/SkyMainNodeJS";
-import BalanceRunMain from "../services/balance/balanceRunMain";
-import { ENVDefinition, ResponseHandler, ApiKeyConfig } from "../types/types";
-import { APICallReturn } from "@decloudlabs/skynet/lib/types/types";
-import { checkBalance } from "../middleware/checkBalance";
-import { protect } from "../middleware/auth";
-import { parseAuth } from "../middleware/parseAuth";
-import { validateSession } from "../middleware/validateSession";
-import { sessionMiddleware } from "../middleware/sessionMiddleware";
-import { generateApiKey, revokeApiKey } from "../auth/apiKeyService";
-import { AuthService } from "../auth/authService";
-import { DatabaseMigration } from "../database/databaseMigration";
-import { getFractionalTableSchemas } from "../database/fractionalTableSchemas";
-import { DataStorageService } from "../services/dataStorage/dataStorageService";
-import SkynetFractionalPaymentService from "../services/payment/skynetFractionalPaymentService";
+import { executeAICall } from "../services/AIService/entrypoint";
+import type { RequestPayload } from "../types/schemas";
+import {
+  envDefinitionSchema,
+  type ENVDefinition,
+  ResponseHandler,
+  type ResponseHandlerData,
+} from "../types/types";
 import express, { Request, Response, NextFunction } from "express";
 import multer from "multer";
 import { Pool } from "pg";
+import { createDrizzleClient } from "../database/drizzleClient";
+import { lockEndpointsIfEnabled } from "../utils/lockEndpoints";
+import { createApiKeyAuthMiddleware } from "../middleware/apiKeyAuth";
+import { createCreditsService } from "../services/billing/creditsService";
 
-let skyNode: SkyMainNodeJS;
-let authService: AuthService | null = null;
 let globalPostgresUrl: string | null = null;
-let dataStorageService: DataStorageService | null = null;
-
-export const setupSkyNode = async (skyNodeParam: SkyMainNodeJS) => {
-  skyNode = skyNodeParam;
-};
-
-export const getSkyNode = () => {
-  return skyNode;
-};
 
 // Global function to get PostgreSQL URL
 export const getGlobalPostgresUrl = (): string => {
   if (!globalPostgresUrl) {
-    throw new Error('PostgreSQL URL not initialized. Make sure to call initAIAccessPoint first.');
+    throw new Error(
+      "PostgreSQL URL not initialized. Make sure to call initAIAccessPoint first."
+    );
   }
   return globalPostgresUrl;
 };
+
+import { responseHandlerDataSchema } from "../types/schemas";
 
 // Response handler class to unify regular and streaming responses
 export class ResponseHandlerImpl implements ResponseHandler {
@@ -49,45 +39,117 @@ export class ResponseHandlerImpl implements ResponseHandler {
   constructor(req: Request, res: Response) {
     this.req = req;
     this.res = res;
-    this.isStreaming = req.query.stream === 'true';
+    this.isStreaming = req.query.stream === "true";
     this.hasStarted = false;
     this.hasEnded = false;
 
     // Setup streaming headers if needed
     if (this.isStreaming) {
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('Connection', 'keep-alive');
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
     }
   }
+
   // Send partial update (only in streaming mode)
-  sendUpdate(data: any): void {
+  sendUpdate(data: ResponseHandlerData | Buffer | string): void {
     if (!this.isStreaming || this.hasEnded) return;
 
     this.hasStarted = true;
-    this.res.write(`data: ${JSON.stringify(data)}\n\n`);
+
+    // Handle Buffer (file) - send as base64 in streaming
+    if (Buffer.isBuffer(data)) {
+      const base64 = data.toString("base64");
+      this.res.write(
+        `data: ${JSON.stringify({
+          success: true,
+          content: base64,
+          isFile: true,
+        })}\n\n`
+      );
+      if (typeof (this.res as any).flush === "function") {
+        (this.res as any).flush();
+      }
+      return;
+    }
+
+    // Handle string
+    if (typeof data === "string") {
+      this.res.write(
+        `data: ${JSON.stringify({ success: true, content: data })}\n\n`
+      );
+      if (typeof (this.res as any).flush === "function") {
+        (this.res as any).flush();
+      }
+      return;
+    }
+
+    // Handle ResponseHandlerData - validate with Zod
+    const validation = responseHandlerDataSchema.safeParse(data);
+    if (!validation.success) {
+      console.error("❌ Invalid response data:", validation.error);
+      this.res.write(
+        `data: ${JSON.stringify({
+          success: false,
+          error: "Invalid response format",
+        })}\n\n`
+      );
+      return;
+    }
+
+    this.res.write(`data: ${JSON.stringify(validation.data)}\n\n`);
     // Check if flush exists (some Express response objects include it via compression middleware)
-    if (typeof (this.res as any).flush === 'function') {
+    if (typeof (this.res as any).flush === "function") {
       (this.res as any).flush();
     }
   }
 
   // Send final response and end
-  sendFinalResponse(data: any): void {
+  sendFinalResponse(data: ResponseHandlerData | Buffer | string): void {
     if (this.hasEnded) return;
     this.hasEnded = true;
 
-    // Include session token in response if it was generated
-    const responseData = { ...data };
-    if (this.req.generatedSessionToken) {
-      responseData.sessionToken = this.req.generatedSessionToken;
-      responseData.sessionExpiresAt = Date.now() + (24 * 60 * 60 * 1000); // 24 hours from now
-      console.log('🔑 Including session token in response');
+    // Handle Buffer (file) - send as file download
+    if (Buffer.isBuffer(data)) {
+      // This shouldn't happen in final response for files, use sendFile instead
+      // But handle it gracefully
+      this.res
+        .status(500)
+        .json({ success: false, error: "Use sendFile() for file responses" });
+      return;
     }
+
+    // Handle string
+    if (typeof data === "string") {
+      const responseData = { success: true, content: data };
+      if (this.isStreaming) {
+        this.res.write(
+          `data: ${JSON.stringify({ ...responseData, done: true })}\n\n`
+        );
+        this.res.end();
+      } else {
+        this.res.json(responseData);
+      }
+      return;
+    }
+
+    // Handle ResponseHandlerData - validate with Zod
+    const validation = responseHandlerDataSchema.safeParse(data);
+    if (!validation.success) {
+      console.error("❌ Invalid response data:", validation.error);
+      this.res
+        .status(500)
+        .json({ success: false, error: "Invalid response format" });
+      return;
+    }
+
+    const responseData = validation.data;
 
     if (this.isStreaming) {
       // Final message for streaming
-      this.res.write(`data: ${JSON.stringify({ ...responseData, done: true })}\n\n`);
+      this.res.write(
+        `data: ${JSON.stringify({ ...responseData, done: true })}\n\n`
+      );
       this.res.end();
     } else {
       // Regular JSON response
@@ -95,18 +157,35 @@ export class ResponseHandlerImpl implements ResponseHandler {
     }
   }
 
+  // Send a file response (for image generation services, etc.)
+  sendFile(buffer: Buffer, filename: string, mimetype: string): void {
+    if (this.hasEnded) return;
+    this.hasEnded = true;
+
+    this.res.setHeader("Content-Type", mimetype);
+    this.res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${filename}"`
+    );
+    this.res.setHeader("Content-Length", buffer.length.toString());
+    this.res.send(buffer);
+  }
+
   // Send an error response
   sendError(error: string | Error, statusCode: number = 500): void {
     if (this.hasEnded) return;
     this.hasEnded = true;
 
-    const errorMessage = typeof error === 'string' ? error : error.message;
+    const errorMessage = typeof error === "string" ? error : error.message;
+    const errorResponse = { success: false, error: errorMessage };
 
     if (this.isStreaming) {
-      this.res.write(`data: ${JSON.stringify({ error: errorMessage, done: true })}\n\n`);
+      this.res.write(
+        `data: ${JSON.stringify({ ...errorResponse, done: true })}\n\n`
+      );
       this.res.end();
     } else {
-      this.res.status(statusCode).json({ error: errorMessage });
+      this.res.status(statusCode).json(errorResponse);
     }
   }
 
@@ -116,603 +195,117 @@ export class ResponseHandlerImpl implements ResponseHandler {
   }
 }
 
-// Enhanced BalanceRunMain type that includes automatic system prompt handling
-export interface EnhancedBalanceRunMain extends BalanceRunMain {
-  // Inherits the new callAIModel signature from BalanceRunMain
+// AI Service interface for compatibility
+export interface AIService {
+  callAIModel(params: RequestPayload): Promise<any>;
 }
 
 // Define the type for the runNaturalFunction parameter to make it explicit
 export type RunNaturalFunctionType = (
   req: Request,
   res: Response,
-  balanceRunMain: EnhancedBalanceRunMain,
+  aiService: AIService,
   responseHandler: ResponseHandler
 ) => Promise<void>;
 
-
-export interface AIAccessPointConfig {
-  apiKeyConfig?: ApiKeyConfig;
-  authServiceClass?: new () => AuthService;  // Changed: accept class instead of instance
-  dataStorageValidationFunction?: (
-    data: any,
-    accountNFT: { collectionID: string; nftID: string },
-    serviceName: string,
-    referenceId: string
-  ) => Promise<{ isValid: boolean; error?: string; transformedData?: any }>;
-}
+// Legacy AIAccessPointConfig removed - configuration is now via environment only.
 
 export const initAIAccessPoint = async (
-  env: ENVDefinition,
-  skyNodeParam: SkyMainNodeJS,
+  env: unknown,
   app: express.Application,
   runNaturalFunction: RunNaturalFunctionType,
-  runUpdate: boolean,
-  upload?: multer.Multer,
-  config?: AIAccessPointConfig
-): Promise<APICallReturn<BalanceRunMain>> => {
+  upload?: multer.Multer
+): Promise<{ success: boolean; data?: AIService; error?: Error }> => {
   try {
-    await setupSkyNode(skyNodeParam);
-    globalPostgresUrl = env.POSTGRES_URL;
+    // Validate environment configuration with Zod
+    const validatedEnv = envDefinitionSchema.parse(env);
+    globalPostgresUrl = validatedEnv.POSTGRES_URL;
 
     const pool = new Pool({
-      connectionString: env.POSTGRES_URL,
+      connectionString: validatedEnv.POSTGRES_URL,
       ssl: {
-        rejectUnauthorized: false
-      }
+        rejectUnauthorized: false,
+      },
     });
 
-    // Initialize all database tables using centralized migration BEFORE creating services
-    const migration = new DatabaseMigration(pool);
-    const fractionalTableSchemas = getFractionalTableSchemas();
-    await migration.migrateTables(fractionalTableSchemas);
-
-    // Now create the balance service after tables exist
-    const balanceRunMain = new BalanceRunMain(env, skyNodeParam, pool);
-
-    // No longer need to get contract address from old system
-    // We use hardcoded fractional contract address in SkynetFractionalPaymentService
-
-    await balanceRunMain.setup();
-    // Note: Settlement processing is now handled by a separate service
-    // The balance service only handles cost accumulation
+    // Initialize drizzle client (for new credits/requests system)
+    const db = createDrizzleClient(pool);
 
     // Test the database connection
     try {
-      await pool.query('SELECT 1');
+      await pool.query("SELECT 1");
       console.log("✅ Database connection established successfully");
     } catch (error) {
       console.error("❌ Database connection failed:", error);
       throw new Error(`Database connection failed: ${error}`);
     }
 
-
-    // Initialize auth service only if explicitly provided
-    if (config?.authServiceClass) {
-      authService = new config.authServiceClass();
-      console.log("✅ Custom auth service initialized successfully");
-    } else {
-      // Don't create default auth service - keep it null
-      authService = null;
-      console.log("ℹ️ No auth service configured - authentication will be skipped");
-    }
-
-    // Initialize data storage service
-    dataStorageService = new DataStorageService(pool);
-    if (config?.dataStorageValidationFunction) {
-      dataStorageService.setValidationFunction(config.dataStorageValidationFunction);
-      console.log("✅ Data storage service initialized with custom validation function");
-    } else {
-      console.log("✅ Data storage service initialized without custom validation");
-    }
-
+    // Initialize API-key auth and credits service
+    const apiKeyAuth = createApiKeyAuthMiddleware(pool);
+    const creditsService = createCreditsService(pool);
 
     // Handler function that wraps runNaturalFunction with ResponseHandler
-    const handleRequest = async (req: Request, res: Response, next: NextFunction) => {
+    const handleRequest = async (
+      req: Request,
+      res: Response,
+      next: NextFunction
+    ) => {
       try {
-        // Only check auth if auth service is explicitly provided
-        if (authService && req.body.accountNFT?.nftID && req.body.walletAddress) {
-          const isAuthenticated = await authService.checkAuthStatus(req);
-
-          if (!isAuthenticated) {
-            // Generate auth link and send it back instead of proceeding
-            try {
-              const authLink = await authService.generateAuthLink(req);
-              return res.status(200).json({
-                success: true,
-                message: "Authentication required, please authenticate using this link: " + authLink,
-                data: {
-                  authLink: authLink,
-                  message: "Please authenticate using the provided link",
-                  isAuthenticated: false
-                }
-              });
-            } catch (authError: any) {
-              console.error("❌ Error generating auth link:", authError);
-              return res.status(500).json({
-                success: false,
-                error: "Failed to generate authentication link"
-              });
-            }
-          }
-        }
-
-        // Create a wrapper for balanceRunMain.callAIModel that automatically includes user's system prompt
-        const enhancedBalanceRunMain: EnhancedBalanceRunMain = {
-          ...balanceRunMain,
-          callAIModel: async (params, accountNFT) => {
+        // Create AI service wrapper that automatically includes user's system prompt
+        const aiService: AIService = {
+          callAIModel: async (params: RequestPayload) => {
             // Get the current user system prompt from the request (in case it changed) - handles both JSON and form data
-            const currentUserSystemPrompt = req.body.systemPrompt || req.body.system_prompt || req.body['systemPrompt'] || req.body['system_prompt'];
+            const currentUserSystemPrompt =
+              req.body.systemPrompt ||
+              req.body.system_prompt ||
+              req.body["systemPrompt"] ||
+              req.body["system_prompt"];
 
             // Combine user's system prompt with any existing system prompt
-            let combinedSystemPrompt = params.system_prompt || '';
+            let combinedSystemPrompt = params.system_prompt || "";
             if (currentUserSystemPrompt) {
               combinedSystemPrompt = combinedSystemPrompt
                 ? `${combinedSystemPrompt}\n\n${currentUserSystemPrompt}`
                 : currentUserSystemPrompt;
             }
 
-            return balanceRunMain.callAIModel(
-              {
-                ...params,
-                system_prompt: combinedSystemPrompt
-              },
-              accountNFT
-            );
-          }
+            // Use the new AIService with fp-ts
+            const result = await executeAICall({
+              ...params,
+              system_prompt: combinedSystemPrompt,
+            });
+
+            if (!result.success) {
+              throw result.error;
+            }
+
+            return result.data;
+          },
         };
 
         const responseHandler = new ResponseHandlerImpl(req, res);
-        await runNaturalFunction(req, res, enhancedBalanceRunMain, responseHandler);
+        await runNaturalFunction(req, res, aiService, responseHandler);
       } catch (error: any) {
         console.error("❌ Error in request handler:", error);
         if (!res.headersSent) {
-          res.status(500).json({ error: error.message || "Internal server error" });
+          res
+            .status(500)
+            .json({ error: error.message || "Internal server error" });
         }
         next(error);
       }
     };
 
-    // Setup routes
+    // Setup single natural-request route (API key only)
+    const middlewares: any[] = [];
     if (upload) {
-      app.post(
-        "/natural-request",
-        upload.array("files"),
-        sessionMiddleware,  // 1. FAST PATH: If session valid, sets all data & sessionValidated=true
-        async (req: Request, res: Response, next: NextFunction) => {
-          // Skip if session was already validated
-          if ((req as any).sessionValidated) return next();
-          await parseAuth(req, res, next);  // 2. Parse auth (API key or signature)
-        },
-        async (req: Request, res: Response, next: NextFunction) => {
-          // Skip if session was already validated
-          if ((req as any).sessionValidated) return next();
-          await protect(req, res, next, skyNodeParam, pool);  // 3. Validate (blockchain calls)
-        },
-        async (req: Request, res: Response, next: NextFunction) => {
-          await checkBalance(req, res, next, pool);  // 4. Always check balance
-        },
-        handleRequest  // 5. Handle request
-      );
-    } else {
-      app.post(
-        "/natural-request",
-        sessionMiddleware,  // 1. FAST PATH: If session valid, sets all data & sessionValidated=true
-        async (req: Request, res: Response, next: NextFunction) => {
-          // Skip if session was already validated
-          if ((req as any).sessionValidated) return next();
-          await parseAuth(req, res, next);  // 2. Parse auth (API key or signature)
-        },
-        async (req: Request, res: Response, next: NextFunction) => {
-          // Skip if session was already validated
-          if ((req as any).sessionValidated) return next();
-          await protect(req, res, next, skyNodeParam, pool);  // 3. Validate (blockchain calls)
-        },
-        async (req: Request, res: Response, next: NextFunction) => {
-          await checkBalance(req, res, next, pool);  // 4. Always check balance
-        },
-        handleRequest  // 5. Handle request
-      );
+      middlewares.push(upload.array("files"));
     }
+    middlewares.push(apiKeyAuth);
+    middlewares.push(handleRequest);
 
-    // Get user balance endpoint (shows on-chain balance and pending costs)
-    app.post("/get-balance", 
-      sessionMiddleware,
-      parseAuth,
-      async (req: Request, res: Response, next: NextFunction) => {
-        await protect(req, res, next, skyNodeParam, pool);
-      },
-      async (req: Request, res: Response, next: NextFunction) => {
-        try {
-          const walletAddress = req.body.walletAddress;
-          
-          if (!walletAddress) {
-            return res.status(400).json({
-              success: false,
-              error: "walletAddress is required"
-            });
-          }
+    app.post("/natural-request", ...middlewares);
 
-          // Initialize fractional payment service
-          const paymentService = new SkynetFractionalPaymentService();
-
-          // Get on-chain balance
-          const totalBalanceResponse = await paymentService.getUserTotalBalance(walletAddress);
-          
-          if (!totalBalanceResponse.success) {
-            return res.status(500).json({
-              success: false,
-              error: "Failed to get user balance from contract"
-            });
-          }
-
-          const { depositBalance, creditBalance, totalBalance } = totalBalanceResponse.data;
-
-          // Get pending costs from database
-          const walletAddressLower = walletAddress.toLowerCase();
-          const pendingCostsResult = await pool.query(
-            'SELECT COALESCE(SUM(CAST(amount AS BIGINT)), 0) as total_pending FROM fractional_payments WHERE wallet_address = $1',
-            [walletAddressLower]
-          );
-          const totalPendingCosts = BigInt(pendingCostsResult.rows[0].total_pending || "0");
-
-          // Calculate available balance
-          const availableBalance = totalBalance - totalPendingCosts;
-
-          // Convert to sUSD for display
-          const WEI_TO_SUSD = BigInt(10 ** 18);
-          
-          res.json({
-            success: true,
-            data: {
-              testCredits: (Number(creditBalance) / Number(WEI_TO_SUSD)).toFixed(6) + ' sUSD',
-              availableBalance: (Number(availableBalance) / Number(WEI_TO_SUSD)).toFixed(6) + ' sUSD',
-              pendingCosts: (Number(totalPendingCosts) / Number(WEI_TO_SUSD)).toFixed(6) + ' sUSD',
-              totalRemaining: (Number(availableBalance) / Number(WEI_TO_SUSD)).toFixed(6) + ' sUSD'
-            }
-          });
-        } catch (error: any) {
-          console.error("❌ Error in get-balance handler:", error);
-          res.status(500).json({
-            success: false,
-            error: error.message || "Internal server error"
-          });
-        }
-      });
-
-    // Add auth-link endpoint only if auth service is configured
-    // Note: This endpoint requires protect (to extract wallet/NFT) but no balance check
-    if (authService) {
-      app.post("/auth-link", parseAuth,
-        async (req: Request, res: Response, next: NextFunction) => {
-          await protect(req, res, next, skyNodeParam, pool);
-        },
-        async (req: Request, res: Response, next: NextFunction) => {
-          try {
-            const userAddress = req.body.walletAddress;
-            const nftId = req.body.accountNFT?.nftID;
-
-            if (!userAddress || !nftId) {
-              return res.status(400).json({
-                success: false,
-                error: "userAddress and nftId are required"
-              });
-            }
-
-            const authLink = await authService!.generateAuthLink(req);
-
-            res.json({
-              success: true,
-              data: { link: authLink }
-            });
-          } catch (error: any) {
-            console.error("❌ Error in auth-link handler:", error);
-            res.status(500).json({
-              success: false,
-              error: error.message || "Internal server error"
-            });
-          }
-        });
-    }
-
-    // Add auth-status endpoint only if auth service is configured
-    if (authService) {
-      app.post("/auth-status", parseAuth,
-        async (req: Request, res: Response, next: NextFunction) => {
-          await protect(req, res, next, skyNodeParam, pool);
-        },
-        async (req: Request, res: Response, next: NextFunction) => {
-          try {
-            const userAddress = req.body.walletAddress;
-            const nftId = req.body.accountNFT.nftID;
-
-            if (!userAddress || !nftId) {
-              return res.status(400).json({
-                success: false,
-                error: "userAddress and nftId are required"
-              });
-            }
-
-            const authData = await authService!.getAuth(req);
-            const isAuthenticated = authData ? await authService!.checkAuthStatus(req) : false;
-
-            res.json({
-              success: true,
-              data: {
-                isAuthenticated,
-                accountName: authData?.account_name || null,
-                authData: authData || null
-              }
-            });
-          } catch (error: any) {
-            console.error("❌ Error in auth-status handler:", error);
-            res.status(500).json({
-              success: false,
-              error: error.message || "Internal server error"
-            });
-          }
-        });
-    }
-
-    // Add API key generation endpoint using masterValidation
-    app.post("/generate-api-key",
-      parseAuth,
-      async (req: Request, res: Response, next: NextFunction) => {
-        await protect(req, res, next, skyNodeParam, pool);
-      },
-      async (req: Request, res: Response, next: NextFunction) => {
-        try {
-          const result = await generateApiKey(req, pool);
-          if (result.error) {
-            return res.status(400).json({
-              success: false,
-              error: result.error
-            });
-          }
-
-          res.json({
-            success: true,
-            data: {
-              apiKey: result.apiKey
-            }
-          });
-        } catch (error: any) {
-          res.status(500).json({
-            success: false,
-            error: error.message || "Internal server error"
-          });
-        }
-      });
-
-    // Add session token generation endpoint
-    app.post("/generate-session-token",
-      parseAuth,
-      async (req: Request, res: Response, next: NextFunction) => {
-        await protect(req, res, next, skyNodeParam, pool);
-      },
-      async (req: Request, res: Response, next: NextFunction) =>
-        await checkBalance(req, res, next, pool),
-      async (req: Request, res: Response, next: NextFunction) => {
-        try {
-          // Check if session token was generated by protect middleware
-          if (!req.generatedSessionToken) {
-            return res.status(400).json({
-              success: false,
-              error: "Failed to generate session token - API key validation may have failed"
-            });
-          }
-
-          res.json({
-            success: true,
-            data: {
-              sessionToken: req.generatedSessionToken,
-              sessionExpiresAt: Date.now() + (24 * 60 * 60 * 1000), // 24 hours from now
-              walletAddress: req.body.walletAddress,
-              accountNFT: req.body.accountNFT,
-              agentCollection: req.body.agentCollection
-            }
-          });
-        } catch (error: any) {
-          console.error("❌ Error in generate-session-token handler:", error);
-          res.status(500).json({
-            success: false,
-            error: error.message || "Internal server error"
-          });
-        }
-      });
-
-    // Add API key revocation endpoint using masterValidation
-    app.post("/revoke-api-key", parseAuth, async (req: Request, res: Response, next: NextFunction) => {
-      await protect(req, res, next, skyNodeParam, pool);
-    },
-      async (req: Request, res: Response, next: NextFunction) => {
-        try {
-          const walletAddress = req.body.walletAddress;
-          const { apiKey } = req.body;
-
-          if (!walletAddress) {
-            return res.status(400).json({
-              success: false,
-              error: "Wallet address not available from authentication"
-            });
-          }
-
-          if (!apiKey) {
-            return res.status(400).json({
-              success: false,
-              error: "apiKey is required"
-            });
-          }
-
-          const result = await revokeApiKey(walletAddress, apiKey, pool);
-
-          if (result.error) {
-            return res.status(400).json({
-              success: false,
-              error: result.error
-            });
-          }
-
-          res.json({
-            success: true,
-            message: "API key revoked successfully"
-          });
-        } catch (error: any) {
-          console.error("❌ Error in revoke-api-key handler:", error);
-          res.status(500).json({
-            success: false,
-            error: error.message || "Internal server error"
-          });
-        }
-      });
-
-    // Add auth revocation endpoint only if auth service is configured
-    if (authService) {
-      app.post("/revoke-auth", parseAuth, async (req: Request, res: Response, next: NextFunction) => {
-        await protect(req, res, next, skyNodeParam, pool);
-      },
-        async (req: Request, res: Response, next: NextFunction) => {
-          try {
-            const userAddress = req.body.walletAddress;
-            const nftId = req.body.accountNFT.nftID;
-
-            if (!userAddress || !nftId) {
-              return res.status(400).json({
-                success: false,
-                error: "userAddress and nftId are required"
-              });
-            }
-
-            await authService!.revokeAuth(req);
-
-            res.json({
-              success: true,
-              message: "Auth revoked successfully"
-            });
-          } catch (error: any) {
-            console.error("❌ Error in revoke-auth handler:", error);
-            res.status(500).json({
-              success: false,
-              error: error.message || "Internal server error"
-            });
-          }
-        });
-    }
-
-    // Add withdraw funds endpoint (backend wallet only)
-    app.post("/withdraw-funds", parseAuth, async (req: Request, res: Response, next: NextFunction) => {
-      await protect(req, res, next, skyNodeParam, pool);
-    },
-      async (req: Request, res: Response, next: NextFunction) =>
-        await checkBalance(req, res, next, pool),
-      async (req: Request, res: Response, next: NextFunction) => {
-        try {
-          const { userAddress, amount } = req.body;
-
-          if (!userAddress) {
-            return res.status(400).json({
-              success: false,
-              error: "userAddress is required"
-            });
-          }
-
-          if (!amount) {
-            return res.status(400).json({
-              success: false,
-              error: "amount is required"
-            });
-          }
-
-          // Initialize payment service
-          const paymentService = new SkynetFractionalPaymentService();
-
-          // Check if current signer is backend wallet
-          const isBackendResponse = await paymentService.isCurrentSignerBackendWallet();
-          if (!isBackendResponse.success || !isBackendResponse.data) {
-            return res.status(403).json({
-              success: false,
-              error: "Access denied: Only backend wallet can withdraw funds"
-            });
-          }
-
-          // Get user's contract balance
-          const contractBalanceResponse = await paymentService.getUserDepositBalance(userAddress);
-          if (!contractBalanceResponse.success) {
-            return res.status(500).json({
-              success: false,
-              error: `Failed to get user contract balance: ${contractBalanceResponse.data}`
-            });
-          }
-
-          // Get total pending costs from database for this user across all subnets
-          const pendingCostsQuery = `
-            SELECT COALESCE(SUM(CAST(amount AS BIGINT)), 0) as total_pending
-            FROM fractional_payments 
-            WHERE api_key = $1
-          `;
-          
-          const pendingCostsResult = await pool.query(pendingCostsQuery, [userAddress]);
-          const totalPendingCosts = BigInt(pendingCostsResult.rows[0].total_pending || "0");
-
-          // Calculate available balance: contractBalance - databaseCosts
-          const contractBalance = contractBalanceResponse.data;
-          const availableBalance = contractBalance - totalPendingCosts;
-
-          // Check minimum balance requirement
-          const minimumBalance = BigInt(process.env.MINIMUM_BALANCE || "0");
-          if (minimumBalance > 0 && availableBalance < minimumBalance) {
-            return res.status(400).json({
-              success: false,
-              error: `Insufficient available balance. Available: ${availableBalance} wei, Minimum required: ${minimumBalance} wei, Pending costs: ${totalPendingCosts} wei`
-            });
-          }
-
-          // Check if withdrawal amount is valid
-          const withdrawalAmount = BigInt(amount);
-          if (withdrawalAmount <= 0) {
-            return res.status(400).json({
-              success: false,
-              error: "Withdrawal amount must be greater than 0"
-            });
-          }
-
-          if (withdrawalAmount > availableBalance) {
-            return res.status(400).json({
-              success: false,
-              error: `Withdrawal amount (${withdrawalAmount} wei) exceeds available balance (${availableBalance} wei)`
-            });
-          }
-
-          // Execute withdrawal
-          const withdrawResponse = await paymentService.withdrawUserFunds(userAddress, amount);
-          if (!withdrawResponse.success) {
-            return res.status(500).json({
-              success: false,
-              error: `Failed to withdraw funds: ${withdrawResponse.data}`
-            });
-          }
-
-          console.log(`✅ Successfully withdrew ${amount} wei for user ${userAddress}. Available balance: ${availableBalance} wei`);
-
-          res.json({
-            success: true,
-            message: `Successfully withdrew ${amount} wei`,
-            data: {
-              withdrawnAmount: amount,
-              contractBalance: contractBalance.toString(),
-              pendingCosts: totalPendingCosts.toString(),
-              availableBalance: availableBalance.toString(),
-              remainingBalance: (availableBalance - withdrawalAmount).toString()
-            }
-          });
-        } catch (error: any) {
-          console.error("❌ Error in withdraw-funds handler:", error);
-          res.status(500).json({
-            success: false,
-            error: error.message || "Internal server error"
-          });
-        }
-      });
-      
     // Add global error handling middleware
     app.use((error: any, req: Request, res: Response, next: NextFunction) => {
       console.error("❌ [GLOBAL ERROR HANDLER] Unhandled error:", error);
@@ -722,7 +315,7 @@ export const initAIAccessPoint = async (
         res.status(500).json({
           success: false,
           error: "Internal server error",
-          message: error.message
+          message: error.message,
         });
       }
     });
@@ -732,46 +325,33 @@ export const initAIAccessPoint = async (
       console.log("⚠️ [404 HANDLER] No route matched:", req.method, req.path);
       res.status(404).json({
         success: false,
-        error: "Route not found"
+        error: "Route not found",
       });
     });
 
+    // Security: Optionally lock dynamic endpoint creation
+    lockEndpointsIfEnabled(app);
+
     console.log("✅ AI Access Point initialized successfully");
-    return { success: true, data: balanceRunMain };
+    return {
+      success: true,
+      data: {
+        callAIModel: async (params: RequestPayload) => {
+          const result = await executeAICall(params);
+          if (!result.success) {
+            throw result.error;
+          }
+          return result.data;
+        },
+      } as AIService,
+    };
   } catch (error: any) {
     console.error("❌ Error in initAIAccessPoint:", error);
     return {
       success: false,
-      data: new Error(`Failed to initialize AI Access Point: ${error.message}`),
+      error: new Error(
+        `Failed to initialize AI Access Point: ${error.message}`
+      ),
     };
-  }
-};
-
-// Export auth service for developer use
-export const getAuthService = () => authService;
-
-// Function to set auth service after initialization
-export const setAuthService = (newAuthService: AuthService) => {
-  authService = newAuthService;
-  console.log("✅ Auth service updated successfully");
-};
-
-// Export data storage service for developer use
-export const getDataStorageService = () => dataStorageService;
-
-// Function to set data storage validation function after initialization
-export const setDataStorageValidationFunction = (
-  validationFunction: (
-    data: any,
-    accountNFT: { collectionID: string; nftID: string },
-    serviceName: string,
-    referenceId: string
-  ) => Promise<{ isValid: boolean; error?: string; transformedData?: any }>
-) => {
-  if (dataStorageService) {
-    dataStorageService.setValidationFunction(validationFunction);
-    console.log("✅ Data storage validation function updated successfully");
-  } else {
-    console.error("❌ Data storage service not initialized");
   }
 };
