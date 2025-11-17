@@ -276,27 +276,37 @@ export const initAIAccessPoint = async (
               throw new Error('Organisation ID not found in request context');
             }
             // Automatically set service to appName from env, organisationId from request
-            await creditsService.addCost(
+            const result = await creditsService.addCost(
               {
                 organisationId: req.organisationId,
                 apiKeyId: req.apiKeyId ?? undefined,
                 appName: validatedEnv.appName,
               },
               amountDollars
-            );
+            )();
+
+            if (result._tag === 'Left') {
+              throw result.left;
+            }
           },
           checkBalance: async (requiredDollars: string) => {
             if (!req.organisationId) {
               throw new Error('Organisation ID not found in request context');
             }
-            return await creditsService.checkBalance(
+            const result = await creditsService.checkBalance(
               {
                 organisationId: req.organisationId,
                 apiKeyId: req.apiKeyId ?? undefined,
                 appName: validatedEnv.appName,
               },
               requiredDollars
-            );
+            )();
+
+            if (result._tag === 'Left') {
+              throw result.left;
+            }
+
+            return result.right;
           },
         };
 
