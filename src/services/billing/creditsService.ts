@@ -46,17 +46,47 @@ export function createCreditsService(pool: Pool) {
     );
   };
 
-  const validateDollarAmount = (amount: string): TE.TaskEither<Error, string> => {
+  /**
+   * Round dollar amount UP to 2 decimal places (ceiling)
+   * Accepts any numeric string and rounds it UP to 2 decimal places
+   * This ensures we never lose money by rounding down
+   */
+  const roundDollarAmount = (amount: string): TE.TaskEither<Error, string> => {
     return TE.fromEither(
       E.tryCatch(
         () => {
-          const dollarAmountSchema = z
-            .string()
-            .regex(/^\d+(\.\d{1,2})?$/, 'Amount must be a valid dollar value with up to 2 decimal places');
-          dollarAmountSchema.parse(amount);
-          return amount;
+          const numValue = Number.parseFloat(amount);
+          if (!Number.isFinite(numValue)) {
+            throw new Error(`Invalid dollar value: ${amount}`);
+          }
+          if (numValue < 0) {
+            throw new Error(`Dollar amount cannot be negative: ${amount}`);
+          }
+          // Round UP to 2 decimal places (ceiling) to ensure we never lose money
+          const rounded = Math.ceil(numValue * 100) / 100;
+          return rounded.toFixed(2);
         },
-        error => (error instanceof Error ? error : new Error('Invalid dollar amount format'))
+        error => (error instanceof Error ? error : new Error(`Invalid dollar value: ${amount}`))
+      )
+    );
+  };
+
+  const validateDollarAmount = (amount: string): TE.TaskEither<Error, string> => {
+    return pipe(
+      roundDollarAmount(amount), // Round first, then validate
+      TE.chain(roundedAmount =>
+        TE.fromEither(
+          E.tryCatch(
+            () => {
+              const dollarAmountSchema = z
+                .string()
+                .regex(/^\d+(\.\d{1,2})?$/, 'Amount must be a valid dollar value with up to 2 decimal places');
+              dollarAmountSchema.parse(roundedAmount);
+              return roundedAmount;
+            },
+            error => (error instanceof Error ? error : new Error('Invalid dollar amount format'))
+          )
+        )
       )
     );
   };
