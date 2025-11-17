@@ -6,6 +6,7 @@ import { createDrizzleClient } from '../database/drizzleClient';
 import { createApiKeyAuthMiddleware } from '../middleware/auth';
 import { type AIModelResponse, executeAICall } from '../services/AIService/entrypoint';
 import { createCreditsService } from '../services/billing/creditsService';
+import { createCreditsRepository } from '../services/billing/data-access/db';
 import type { RequestPayload } from '../types/schemas';
 import { responseHandlerDataSchema } from '../types/schemas';
 import { ResponseHandler, type ResponseHandlerData, envDefinitionSchema } from '../types/types';
@@ -230,6 +231,15 @@ export const initAIAccessPoint = async (
     // Initialize API-key auth and credits service
     const apiKeyAuth = createApiKeyAuthMiddleware(pool);
     const creditsService = createCreditsService(pool);
+
+    // Ensure base cost exists for this app during initialization
+    const repository = createCreditsRepository(pool);
+    const baseCostResult = await repository.getBaseCost(validatedEnv.appName)();
+    if (baseCostResult._tag === 'Left') {
+      console.warn(`[init] Failed to ensure base cost exists: ${baseCostResult.left.message}`);
+    } else {
+      console.log(`[init] Base cost ensured for app "${validatedEnv.appName}": ${baseCostResult.right} dollars`);
+    }
 
     // Handler function that wraps runNaturalFunction with ResponseHandler
     const handleRequest = (req: Request, res: Response, next: NextFunction): void => {

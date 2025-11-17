@@ -16,7 +16,7 @@ type DrizzleTransaction = Parameters<Parameters<ReturnType<typeof createDrizzleC
 
 export interface CreditsRepository {
   getBalance(organisationId: string): TE.TaskEither<Error, number>;
-  getBaseCost(appName: string): TE.TaskEither<Error, number>;
+  getBaseCost(appName: string): TE.TaskEither<Error, number>; // Returns base cost in dollars
   ensureOrganisationCreditsExists(organisationId: string, tx: DrizzleTransaction): TE.TaskEither<Error, void>;
   getBalanceWithLock(organisationId: string, tx: DrizzleTransaction): TE.TaskEither<Error, number>;
   updateBalance(organisationId: string, newBalance: number, tx: DrizzleTransaction): TE.TaskEither<Error, void>;
@@ -67,15 +67,72 @@ export function createCreditsRepository(pool: Pool): CreditsRepository {
     getBaseCost(appName: string): TE.TaskEither<Error, number> {
       return TE.tryCatch(
         async () => {
-          const [baseRow] = await db
-            .select({ baseCostCents: backendBaseCosts.baseCostCents })
+          console.log(`[getBaseCost] Looking up base cost for app: ${appName}`);
+
+          // First, try to get existing base cost
+          let [baseRow] = await db
+            .select({ baseCostDollars: backendBaseCosts.baseCostDollars })
             .from(backendBaseCosts)
             .where(eq(backendBaseCosts.appName, appName))
             .limit(1);
 
-          return baseRow?.baseCostCents ?? 0;
+          if (baseRow) {
+            // Numeric type returns string, convert to number
+            const cost = baseRow.baseCostDollars;
+            const costNum = cost !== undefined && cost !== null ? Number(cost) : 0;
+            console.log(`[getBaseCost] Found existing base cost: ${costNum} dollars`);
+            return costNum;
+          }
+
+          console.log(`[getBaseCost] Base cost not found, creating default for app: ${appName}`);
+
+          // If not found, create a default base cost of 0.1 dollars
+          const defaultBaseCostDollars = 0.1;
+          try {
+            const insertResult = await db
+              .insert(backendBaseCosts)
+              .values({
+                appName,
+                baseCostDollars: defaultBaseCostDollars,
+              })
+              .onConflictDoNothing()
+              .returning({ baseCostDollars: backendBaseCosts.baseCostDollars });
+
+            if (insertResult.length > 0) {
+              console.log(`[getBaseCost] Successfully created base cost: ${defaultBaseCostDollars} dollars`);
+              return defaultBaseCostDollars;
+            } else {
+              console.log(`[getBaseCost] Insert was skipped (conflict), re-querying...`);
+            }
+          } catch (error) {
+            console.error(`[getBaseCost] Error inserting base cost:`, error);
+            // If insert fails, ignore and re-query (might have been created by another request)
+          }
+
+          // Re-query to get the actual value (in case of conflict or successful insert)
+          [baseRow] = await db
+            .select({ baseCostDollars: backendBaseCosts.baseCostDollars })
+            .from(backendBaseCosts)
+            .where(eq(backendBaseCosts.appName, appName))
+            .limit(1);
+
+          if (baseRow) {
+            const cost = baseRow.baseCostDollars;
+            const costNum = cost !== undefined && cost !== null ? Number(cost) : defaultBaseCostDollars;
+            console.log(`[getBaseCost] Retrieved base cost after insert attempt: ${costNum} dollars`);
+            return costNum;
+          }
+
+          // Fallback to default if still not found (shouldn't happen)
+          console.warn(
+            `[getBaseCost] Base cost still not found after insert, using default: ${defaultBaseCostDollars} dollars`
+          );
+          return defaultBaseCostDollars;
         },
-        error => (error instanceof Error ? error : new Error('Failed to get base cost'))
+        error => {
+          console.error(`[getBaseCost] Error:`, error);
+          return error instanceof Error ? error : new Error('Failed to get base cost');
+        }
       );
     },
 

@@ -71,7 +71,7 @@ export const creditLogs = pgTable('credit_logs', {
 export const backendBaseCosts = pgTable('backend_base_costs', {
   id: uuid('id').defaultRandom().primaryKey(),
   appName: text('app_name').notNull().unique(), // Changed from backendId to appName
-  baseCostCents: integer('base_cost_cents').notNull(), // 2-decimal dollars -> cents
+  baseCostDollars: numeric('base_cost_dollars', { precision: 10, scale: 2, mode: 'number' }).notNull(), // Base cost in dollars with 2 decimal places
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
