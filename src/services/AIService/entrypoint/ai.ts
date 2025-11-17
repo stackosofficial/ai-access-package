@@ -6,9 +6,6 @@ import type { RequestPayload } from '../../../types/schemas';
 import { callAIModel } from '../domain/aiModel';
 import type { AIModelResponse } from '../domain/aiModel';
 
-/**
- * Validate request payload using Zod schema (entrypoint validation)
- */
 const validateRequestPayload = (data: unknown): TE.TaskEither<Error, RequestPayload> => {
   const result = requestPayloadSchema.safeParse(data);
 
@@ -21,23 +18,23 @@ const validateRequestPayload = (data: unknown): TE.TaskEither<Error, RequestPayl
   return TE.right(result.data);
 };
 
-/**
- * Main entry point: Validate params, then call domain logic
- */
-export const callAI = (params: unknown): TE.TaskEither<Error, AIModelResponse> => {
+export const callAI = (
+  params: unknown,
+  userSystemPrompt?: string,
+  apiKey?: string
+): TE.TaskEither<Error, AIModelResponse> => {
   return pipe(
-    validateRequestPayload(params), // Entrypoint validates params
-    TE.chain(callAIModel) // Pass validated params to domain
+    validateRequestPayload(params),
+    TE.chain(validatedParams => callAIModel(validatedParams, userSystemPrompt, apiKey))
   );
 };
 
-/**
- * Execute the AI call and return the result
- */
 export const executeAICall = async (
-  params: unknown
+  params: unknown,
+  userSystemPrompt?: string,
+  apiKey?: string
 ): Promise<{ success: true; data: AIModelResponse } | { success: false; error: Error }> => {
-  const result = await callAI(params)();
+  const result = await callAI(params, userSystemPrompt, apiKey)();
 
   if (result._tag === 'Left') {
     return {

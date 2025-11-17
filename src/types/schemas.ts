@@ -24,11 +24,18 @@ export const aiModelResponseSchema = z.object({
 });
 
 /**
- * Request Payload schema - only prompt and system_prompt (API key in headers)
+ * Request Payload schema - prompt and system_prompt (from service)
+ * Note: systemPrompt (from user) is extracted from req.body separately
  */
 export const requestPayloadSchema = z.object({
   prompt: z.string().min(1, 'Prompt is required and cannot be empty'),
   system_prompt: z.string().optional(),
+  response_format: z
+    .object({
+      type: z.literal('json_object'),
+      schema: z.record(z.string(), z.unknown()),
+    })
+    .optional(),
 });
 
 /**

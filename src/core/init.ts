@@ -249,10 +249,7 @@ export const initAIAccessPoint = async (
           if (req.organisationId) {
             const body = req.body as Record<string, unknown>;
             const prompt = (typeof body.prompt === 'string' ? body.prompt : '') || '';
-            const systemPrompt =
-              (typeof body.systemPrompt === 'string' ? body.systemPrompt : null) ||
-              (typeof body.system_prompt === 'string' ? body.system_prompt : null) ||
-              undefined;
+            const systemPrompt = typeof body.systemPrompt === 'string' ? body.systemPrompt : undefined;
 
             const logStartResult = await creditsService.logRequestStart(
               {
@@ -270,30 +267,13 @@ export const initAIAccessPoint = async (
             }
           }
 
-          // Create AI service wrapper that automatically includes user's system prompt
           const aiService: AIService = {
             callAIModel: async (params: RequestPayload) => {
-              // Get the current user system prompt from the request (in case it changed) - handles both JSON and form data
               const body = req.body as Record<string, unknown>;
-              const currentUserSystemPrompt =
-                (typeof body.systemPrompt === 'string' ? body.systemPrompt : null) ||
-                (typeof body.system_prompt === 'string' ? body.system_prompt : null) ||
-                (typeof body['systemPrompt'] === 'string' ? body['systemPrompt'] : null) ||
-                (typeof body['system_prompt'] === 'string' ? body['system_prompt'] : null);
+              const userSystemPrompt = typeof body.systemPrompt === 'string' ? body.systemPrompt : undefined;
+              const apiKey = req.apiKey?.apiKey;
 
-              // Combine user's system prompt with any existing system prompt
-              let combinedSystemPrompt = params.system_prompt || '';
-              if (currentUserSystemPrompt) {
-                combinedSystemPrompt = combinedSystemPrompt
-                  ? `${combinedSystemPrompt}\n\n${currentUserSystemPrompt}`
-                  : currentUserSystemPrompt;
-              }
-
-              // Use the new AIService with fp-ts
-              const result = await executeAICall({
-                ...params,
-                system_prompt: combinedSystemPrompt,
-              });
+              const result = await executeAICall(params, userSystemPrompt, apiKey);
 
               if (!result.success) {
                 throw result.error;
