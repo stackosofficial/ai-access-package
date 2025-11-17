@@ -22,7 +22,7 @@ export interface CreditsRepository {
   updateBalance(organisationId: string, newBalance: number, tx: DrizzleTransaction): TE.TaskEither<Error, void>;
   insertCreditLog(
     organisationId: string,
-    costCents: number,
+    costDollars: number,
     service: string,
     tx: DrizzleTransaction
   ): TE.TaskEither<Error, void>;
@@ -36,7 +36,7 @@ export interface CreditsRepository {
   ): TE.TaskEither<Error, string>;
   updateRequest(
     requestId: string,
-    costCents: number,
+    costDollars: number,
     status: 'success' | 'error',
     responseTimeMs: number,
     txOrDb: DrizzleTransaction
@@ -56,7 +56,9 @@ export function createCreditsRepository(pool: Pool): CreditsRepository {
             .where(eq(organisationsCredits.organisationId, organisationId))
             .limit(1);
 
-          return row?.balance ?? 0;
+          // Numeric type returns string, convert to number
+          const balance = row?.balance;
+          return balance !== undefined && balance !== null ? Number(balance) : 0;
         },
         error => (error instanceof Error ? error : new Error('Failed to get balance'))
       );
@@ -84,7 +86,7 @@ export function createCreditsRepository(pool: Pool): CreditsRepository {
             .insert(organisationsCredits)
             .values({
               organisationId,
-              balance: 0,
+              balance: 0.0,
             })
             .onConflictDoNothing();
         },
@@ -97,9 +99,11 @@ export function createCreditsRepository(pool: Pool): CreditsRepository {
         async () => {
           const result = (await tx.execute(
             sql`SELECT balance FROM organisations_credits WHERE organisation_id = ${organisationId} FOR UPDATE LIMIT 1`
-          )) as { rows: Array<{ balance: number }> };
+          )) as { rows: Array<{ balance: string | number }> };
 
-          return result.rows[0]?.balance ?? 0;
+          const balance = result.rows[0]?.balance;
+          // Numeric type returns string from raw SQL, convert to number
+          return balance !== undefined && balance !== null ? Number(balance) : 0;
         },
         error => (error instanceof Error ? error : new Error('Failed to get balance with lock'))
       );
@@ -122,7 +126,7 @@ export function createCreditsRepository(pool: Pool): CreditsRepository {
 
     insertCreditLog(
       organisationId: string,
-      costCents: number,
+      costDollars: number,
       service: string,
       tx: DrizzleTransaction
     ): TE.TaskEither<Error, void> {
@@ -130,7 +134,7 @@ export function createCreditsRepository(pool: Pool): CreditsRepository {
         async () => {
           await tx.insert(creditLogs).values({
             organisationId,
-            costCents,
+            costDollars,
             service,
           });
         },
@@ -156,7 +160,7 @@ export function createCreditsRepository(pool: Pool): CreditsRepository {
               prompt,
               systemPrompt,
               model,
-              costCents: 0,
+              costDollars: 0,
               status: 'in_progress',
               responseTimeMs: null,
             })
@@ -170,7 +174,7 @@ export function createCreditsRepository(pool: Pool): CreditsRepository {
 
     updateRequest(
       requestId: string,
-      costCents: number,
+      costDollars: number,
       status: 'success' | 'error',
       responseTimeMs: number,
       txOrDb: DrizzleTransaction
@@ -180,7 +184,7 @@ export function createCreditsRepository(pool: Pool): CreditsRepository {
           await txOrDb
             .update(requests)
             .set({
-              costCents,
+              costDollars,
               status,
               responseTimeMs,
             })

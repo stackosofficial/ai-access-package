@@ -214,9 +214,6 @@ export const initAIAccessPoint = async (
       },
     });
 
-    // Initialize drizzle client (for new credits/requests system)
-    createDrizzleClient(pool);
-
     // Test the database connection
     try {
       await pool.query('SELECT 1');
@@ -227,111 +224,157 @@ export const initAIAccessPoint = async (
       throw new Error(`Database connection failed: ${errorMessage}`);
     }
 
+    // Initialize drizzle client (for new credits/requests system)
+    createDrizzleClient(pool);
+
     // Initialize API-key auth and credits service
     const apiKeyAuth = createApiKeyAuthMiddleware(pool);
     const creditsService = createCreditsService(pool);
 
     // Handler function that wraps runNaturalFunction with ResponseHandler
-    const handleRequest = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-      try {
-        // Create AI service wrapper that automatically includes user's system prompt
-        const aiService: AIService = {
-          callAIModel: async (params: RequestPayload) => {
-            // Get the current user system prompt from the request (in case it changed) - handles both JSON and form data
+    const handleRequest = (req: Request, res: Response, next: NextFunction): void => {
+      const startedAt = Date.now();
+      let requestId: string | null = null;
+      let costDollars = '0'; // Track cost for logging (accessible in catch block)
+
+      // Use void to satisfy Express middleware signature, but execute async code
+      void (async () => {
+        try {
+          // Log request start
+          if (req.organisationId) {
             const body = req.body as Record<string, unknown>;
-            const currentUserSystemPrompt =
+            const prompt = (typeof body.prompt === 'string' ? body.prompt : '') || '';
+            const systemPrompt =
               (typeof body.systemPrompt === 'string' ? body.systemPrompt : null) ||
               (typeof body.system_prompt === 'string' ? body.system_prompt : null) ||
-              (typeof body['systemPrompt'] === 'string' ? body['systemPrompt'] : null) ||
-              (typeof body['system_prompt'] === 'string' ? body['system_prompt'] : null);
+              undefined;
 
-            // Combine user's system prompt with any existing system prompt
-            let combinedSystemPrompt = params.system_prompt || '';
-            if (currentUserSystemPrompt) {
-              combinedSystemPrompt = combinedSystemPrompt
-                ? `${combinedSystemPrompt}\n\n${currentUserSystemPrompt}`
-                : currentUserSystemPrompt;
-            }
-
-            // Use the new AIService with fp-ts
-            const result = await executeAICall({
-              ...params,
-              system_prompt: combinedSystemPrompt,
-            });
-
-            if (!result.success) {
-              throw result.error;
-            }
-
-            return result.data;
-          },
-        };
-
-        const responseHandler = new ResponseHandlerImpl(req, res);
-
-        // Create credits service wrapper with automatic context from request
-        const creditsServiceWrapper: CreditsService = {
-          addCost: async (amountDollars: string) => {
-            if (!req.organisationId) {
-              throw new Error('Organisation ID not found in request context');
-            }
-            // Automatically set service to appName from env, organisationId from request
-            const result = await creditsService.addCost(
+            const logStartResult = await creditsService.logRequestStart(
               {
                 organisationId: req.organisationId,
                 apiKeyId: req.apiKeyId ?? undefined,
                 appName: validatedEnv.appName,
               },
-              amountDollars
+              prompt,
+              systemPrompt,
+              undefined // model is not available at this point
             )();
 
-            if (result._tag === 'Left') {
-              throw result.left;
+            if (logStartResult._tag === 'Right') {
+              requestId = logStartResult.right;
             }
-          },
-          checkBalance: async (requiredDollars: string) => {
-            if (!req.organisationId) {
-              throw new Error('Organisation ID not found in request context');
-            }
-            const result = await creditsService.checkBalance(
-              {
-                organisationId: req.organisationId,
-                apiKeyId: req.apiKeyId ?? undefined,
-                appName: validatedEnv.appName,
-              },
-              requiredDollars
-            )();
+          }
 
-            if (result._tag === 'Left') {
-              throw result.left;
-            }
+          // Create AI service wrapper that automatically includes user's system prompt
+          const aiService: AIService = {
+            callAIModel: async (params: RequestPayload) => {
+              // Get the current user system prompt from the request (in case it changed) - handles both JSON and form data
+              const body = req.body as Record<string, unknown>;
+              const currentUserSystemPrompt =
+                (typeof body.systemPrompt === 'string' ? body.systemPrompt : null) ||
+                (typeof body.system_prompt === 'string' ? body.system_prompt : null) ||
+                (typeof body['systemPrompt'] === 'string' ? body['systemPrompt'] : null) ||
+                (typeof body['system_prompt'] === 'string' ? body['system_prompt'] : null);
 
-            return result.right;
-          },
-        };
+              // Combine user's system prompt with any existing system prompt
+              let combinedSystemPrompt = params.system_prompt || '';
+              if (currentUserSystemPrompt) {
+                combinedSystemPrompt = combinedSystemPrompt
+                  ? `${combinedSystemPrompt}\n\n${currentUserSystemPrompt}`
+                  : currentUserSystemPrompt;
+              }
 
-        await runNaturalFunction(req, res, aiService, responseHandler, creditsServiceWrapper);
-      } catch (error: unknown) {
-        console.error('❌ Error in request handler:', error);
-        if (!res.headersSent) {
-          const errorMessage = error instanceof Error ? error.message : 'Internal server error';
-          res.status(500).json({ error: errorMessage });
+              // Use the new AIService with fp-ts
+              const result = await executeAICall({
+                ...params,
+                system_prompt: combinedSystemPrompt,
+              });
+
+              if (!result.success) {
+                throw result.error;
+              }
+
+              return result.data;
+            },
+          };
+
+          const responseHandler = new ResponseHandlerImpl(req, res);
+
+          // Create credits service wrapper with automatic context from request
+          const creditsServiceWrapper: CreditsService = {
+            addCost: async (amountDollars: string) => {
+              if (!req.organisationId) {
+                throw new Error('Organisation ID not found in request context');
+              }
+              costDollars = amountDollars; // Track cost for logging
+              // Automatically set service to appName from env, organisationId from request
+              const result = await creditsService.addCost(
+                {
+                  organisationId: req.organisationId,
+                  apiKeyId: req.apiKeyId ?? undefined,
+                  appName: validatedEnv.appName,
+                },
+                amountDollars
+              )();
+
+              if (result._tag === 'Left') {
+                throw result.left;
+              }
+            },
+            checkBalance: async (requiredDollars: string) => {
+              if (!req.organisationId) {
+                throw new Error('Organisation ID not found in request context');
+              }
+              const result = await creditsService.checkBalance(
+                {
+                  organisationId: req.organisationId,
+                  apiKeyId: req.apiKeyId ?? undefined,
+                  appName: validatedEnv.appName,
+                },
+                requiredDollars
+              )();
+
+              if (result._tag === 'Left') {
+                throw result.left;
+              }
+
+              return result.right;
+            },
+          };
+
+          await runNaturalFunction(req, res, aiService, responseHandler, creditsServiceWrapper);
+
+          // Log request end (success)
+          if (requestId && req.organisationId) {
+            await creditsService.logRequestEnd(requestId, costDollars, 'success', startedAt)();
+          }
+        } catch (error: unknown) {
+          // Log request end (error) - use tracked cost or default to 0
+          if (requestId && req.organisationId) {
+            await creditsService.logRequestEnd(requestId, costDollars || '0', 'error', startedAt)();
+          }
+
+          console.error('❌ Error in request handler:', error);
+          if (!res.headersSent) {
+            const errorMessage = error instanceof Error ? error.message : 'Internal server error';
+            res.status(500).json({ error: errorMessage });
+          }
+          next(error);
         }
-        next(error);
-      }
+      })();
     };
 
     // Setup single natural-request route (API key only)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const middlewares: any[] = [];
-    if (upload) {
-      middlewares.push(upload.array('files'));
-    }
-    middlewares.push(apiKeyAuth);
-    middlewares.push(handleRequest);
+    // Wrap async middleware to satisfy TypeScript (Express supports async middleware)
+    const wrappedApiKeyAuth = (req: Request, res: Response, next: NextFunction): void => {
+      void apiKeyAuth(req, res, next);
+    };
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    app.post('/natural-request', ...middlewares);
+    if (upload) {
+      app.post('/natural-request', upload.array('files'), wrappedApiKeyAuth, handleRequest);
+    } else {
+      app.post('/natural-request', wrappedApiKeyAuth, handleRequest);
+    }
 
     // Add global error handling middleware
     app.use((error: unknown, _req: Request, res: Response, _next: NextFunction): void => {

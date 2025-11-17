@@ -38,19 +38,20 @@ export const roundDollarAmount = (amount: string): TE.TaskEither<Error, string> 
 };
 
 /**
- * Convert dollars to cents
+ * Convert dollars string to number
  */
-export const dollarsToCents = (value: string): TE.TaskEither<Error, number> => {
+export const dollarsToNumber = (value: string): TE.TaskEither<Error, number> => {
   return TE.fromEither(
     E.tryCatch(
       () => {
-        const [whole, frac = ''] = value.split('.');
-        const fracPadded = (frac + '00').slice(0, 2);
-        const cents = Number(whole) * 100 + Number(fracPadded);
-        if (!Number.isFinite(cents)) {
+        const numValue = Number.parseFloat(value);
+        if (!Number.isFinite(numValue)) {
           throw new Error(`Invalid dollar value: ${value}`);
         }
-        return cents;
+        if (numValue < 0) {
+          throw new Error(`Dollar amount cannot be negative: ${value}`);
+        }
+        return numValue;
       },
       error => (error instanceof Error ? error : new Error(`Invalid dollar value: ${value}`))
     )
@@ -67,11 +68,11 @@ export const checkBalance = (
 ): TE.TaskEither<Error, boolean> => {
   return pipe(
     roundDollarAmount(requiredDollars),
-    TE.chain(roundedAmount => dollarsToCents(roundedAmount)),
-    TE.chain(requiredCents =>
+    TE.chain(roundedAmount => dollarsToNumber(roundedAmount)),
+    TE.chain(requiredDollarsNum =>
       pipe(
         repository.getBalance(ctx.organisationId),
-        TE.map(balance => balance >= requiredCents)
+        TE.map(balance => balance >= requiredDollarsNum)
       )
     )
   );
@@ -88,14 +89,18 @@ export const addCost = (
 ): TE.TaskEither<Error, void> => {
   return pipe(
     roundDollarAmount(amountDollars),
-    TE.chain(roundedAmount => dollarsToCents(roundedAmount)),
-    TE.chain(serviceCents =>
+    TE.chain(roundedAmount => dollarsToNumber(roundedAmount)),
+    TE.chain(serviceDollars =>
       pipe(
         repository.getBaseCost(ctx.appName),
-        TE.map(baseCents => ({ serviceCents, baseCents, totalCents: serviceCents + baseCents }))
+        // Base cost is stored in cents, convert to dollars
+        TE.map(baseCostCents => {
+          const baseCostDollars = baseCostCents / 100;
+          return { serviceDollars, baseCostDollars, totalDollars: serviceDollars + baseCostDollars };
+        })
       )
     ),
-    TE.chain(({ totalCents }) =>
+    TE.chain(({ totalDollars }) =>
       TE.tryCatch(
         async () => {
           await executeTransaction(async tx => {
@@ -112,7 +117,7 @@ export const addCost = (
             }
 
             const currentBalance = balanceResult.right;
-            const newBalance = currentBalance - totalCents;
+            const newBalance = currentBalance - totalDollars;
 
             // If balance would go negative, set to 0
             if (newBalance < 0) {
@@ -127,8 +132,8 @@ export const addCost = (
                 throw updateResult.left;
               }
 
-              // Log the charge
-              const logResult = await repository.insertCreditLog(ctx.organisationId, totalCents, ctx.appName, tx)();
+              // Log the charge (store in dollars)
+              const logResult = await repository.insertCreditLog(ctx.organisationId, totalDollars, ctx.appName, tx)();
               if (logResult._tag === 'Left') {
                 throw logResult.left;
               }
@@ -270,8 +275,8 @@ export const logRequestEnd = (
   return pipe(
     validateRequestId(requestId),
     TE.chain(() => roundDollarAmount(costDollars)),
-    TE.chain(amount => dollarsToCents(amount)),
-    TE.chain(costCents =>
+    TE.chain(amount => dollarsToNumber(amount)),
+    TE.chain(costDollarsNum =>
       pipe(
         validateStatus(status),
         TE.chain(validatedStatus =>
@@ -281,10 +286,11 @@ export const logRequestEnd = (
               TE.tryCatch(
                 async () => {
                   const responseTimeMs = Date.now() - validatedStartedAt;
+                  // Store cost in dollars
                   await executeTransaction(async tx => {
                     const result = await repository.updateRequest(
                       requestId,
-                      costCents,
+                      costDollarsNum,
                       validatedStatus,
                       responseTimeMs,
                       tx
