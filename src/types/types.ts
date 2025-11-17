@@ -8,7 +8,6 @@ export {
   responseHandlerDataSchema,
   fileInputSchema,
   multipartFormDataSchema,
-  addCostOptionsSchema,
   creditsContextSchema,
   type ENVDefinition,
   type AIModelResponse,
@@ -16,7 +15,6 @@ export {
   type ResponseHandlerData,
   type FileInput,
   type MultipartFormData,
-  type AddCostOptions,
   type CreditsContext,
 } from './schemas';
 

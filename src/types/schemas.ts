@@ -76,15 +76,6 @@ export const multipartFormDataSchema = z.object({
 });
 
 /**
- * Credits Service - Add Cost Options schema
- */
-export const addCostOptionsSchema = z.object({
-  service: z.string().optional(),
-  reason: z.string().optional(),
-  externalRef: z.string().optional(),
-});
-
-/**
  * Credits Service - Credits Context schema (updated to use appName instead of backendId)
  */
 export const creditsContextSchema = z.object({
@@ -102,5 +93,4 @@ export type RequestPayload = z.infer<typeof requestPayloadSchema>;
 export type ResponseHandlerData = z.infer<typeof responseHandlerDataSchema>;
 export type FileInput = z.infer<typeof fileInputSchema>;
 export type MultipartFormData = z.infer<typeof multipartFormDataSchema>;
-export type AddCostOptions = z.infer<typeof addCostOptionsSchema>;
 export type CreditsContext = z.infer<typeof creditsContextSchema>;

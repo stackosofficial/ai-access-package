@@ -179,12 +179,19 @@ export interface AIService {
   callAIModel(params: RequestPayload): Promise<AIModelResponse>;
 }
 
+// Credits service interface for runNaturalFunction
+export interface CreditsService {
+  addCost(amountDollars: string): Promise<void>;
+  checkBalance(requiredDollars: string): Promise<boolean>;
+}
+
 // Define the type for the runNaturalFunction parameter to make it explicit
 export type RunNaturalFunctionType = (
   req: Request,
   res: Response,
   aiService: AIService,
-  responseHandler: ResponseHandler
+  responseHandler: ResponseHandler,
+  creditsService: CreditsService
 ) => Promise<void>;
 
 // Legacy AIAccessPointConfig removed - configuration is now via environment only.
@@ -222,7 +229,7 @@ export const initAIAccessPoint = async (
 
     // Initialize API-key auth and credits service
     const apiKeyAuth = createApiKeyAuthMiddleware(pool);
-    createCreditsService(pool);
+    const creditsService = createCreditsService(pool);
 
     // Handler function that wraps runNaturalFunction with ResponseHandler
     const handleRequest = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -261,7 +268,39 @@ export const initAIAccessPoint = async (
         };
 
         const responseHandler = new ResponseHandlerImpl(req, res);
-        await runNaturalFunction(req, res, aiService, responseHandler);
+
+        // Create credits service wrapper with automatic context from request
+        const creditsServiceWrapper: CreditsService = {
+          addCost: async (amountDollars: string) => {
+            if (!req.organisationId) {
+              throw new Error('Organisation ID not found in request context');
+            }
+            // Automatically set service to appName from env, organisationId from request
+            await creditsService.addCost(
+              {
+                organisationId: req.organisationId,
+                apiKeyId: req.apiKeyId ?? undefined,
+                appName: validatedEnv.appName,
+              },
+              amountDollars
+            );
+          },
+          checkBalance: async (requiredDollars: string) => {
+            if (!req.organisationId) {
+              throw new Error('Organisation ID not found in request context');
+            }
+            return await creditsService.checkBalance(
+              {
+                organisationId: req.organisationId,
+                apiKeyId: req.apiKeyId ?? undefined,
+                appName: validatedEnv.appName,
+              },
+              requiredDollars
+            );
+          },
+        };
+
+        await runNaturalFunction(req, res, aiService, responseHandler, creditsServiceWrapper);
       } catch (error: unknown) {
         console.error('❌ Error in request handler:', error);
         if (!res.headersSent) {

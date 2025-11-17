@@ -5,16 +5,11 @@ import { z } from 'zod';
 import {
   backendBaseCosts,
   createDrizzleClient,
-  creditsLedger,
+  creditLogs,
   organisationsCredits,
   requests,
 } from '../../database/drizzleClient';
-import {
-  type AddCostOptions,
-  type CreditsContext,
-  addCostOptionsSchema,
-  creditsContextSchema,
-} from '../../types/schemas';
+import { type CreditsContext, creditsContextSchema } from '../../types/schemas';
 
 export function createCreditsService(pool: Pool) {
   const db = createDrizzleClient(pool);
@@ -51,21 +46,15 @@ export function createCreditsService(pool: Pool) {
       return current >= requiredCents;
     },
 
-    async addCost(ctx: CreditsContext, amountDollars: string, options: AddCostOptions = {}): Promise<void> {
+    async addCost(ctx: CreditsContext, amountDollars: string): Promise<void> {
       // Validate context
       creditsContextSchema.parse(ctx);
-
-      // Validate options
-      addCostOptionsSchema.parse(options);
 
       // Validate amount format (dollars with 2 decimals)
       const dollarAmountSchema = z
         .string()
         .regex(/^\d+(\.\d{1,2})?$/, 'Amount must be a valid dollar value with up to 2 decimal places');
       dollarAmountSchema.parse(amountDollars);
-      const service = options.service ?? 'natural-request';
-      const reason = options.reason ?? null;
-      const externalRef = options.externalRef ?? null;
 
       const serviceCents = dollarsToCents(amountDollars);
 
@@ -79,7 +68,7 @@ export function createCreditsService(pool: Pool) {
       const baseCents = baseRow?.baseCostCents ?? 0;
       const totalCents = serviceCents + baseCents;
 
-      // Atomically decrement balance and insert ledger
+      // Atomically decrement balance and log to creditLogs
       await db.transaction(async tx => {
         // Ensure org credits row exists
         await tx
@@ -90,36 +79,43 @@ export function createCreditsService(pool: Pool) {
           })
           .onConflictDoNothing();
 
-        // Fetch current balance
-        const [creditsRow] = await tx
-          .select({ balance: organisationsCredits.balance })
-          .from(organisationsCredits)
-          .where(eq(organisationsCredits.organisationId, ctx.organisationId))
-          .limit(1);
+        // Fetch current balance with row lock to prevent race conditions
+        // Using raw SQL for SELECT FOR UPDATE to lock the row
+        const result = await tx.execute<{ balance: number }>(
+          sql`SELECT balance FROM organisations_credits WHERE organisation_id = ${ctx.organisationId} FOR UPDATE LIMIT 1`
+        );
 
+        const creditsRow = result.rows[0];
         const currentBalance = creditsRow?.balance ?? 0;
-        if (currentBalance < totalCents) {
-          throw new Error(`Insufficient credits: have ${currentBalance} cents, need ${totalCents} cents`);
-        }
-
         const newBalance = currentBalance - totalCents;
 
-        await tx
-          .update(organisationsCredits)
-          .set({
-            balance: newBalance,
-            updatedAt: sql`CURRENT_TIMESTAMP`,
-          })
-          .where(eq(organisationsCredits.organisationId, ctx.organisationId));
+        // If balance would go negative, set to 0 to prevent negative balance
+        // Don't throw error - just set to 0 so next request will fail checkBalance
+        if (newBalance < 0) {
+          await tx
+            .update(organisationsCredits)
+            .set({
+              balance: 0,
+              updatedAt: sql`CURRENT_TIMESTAMP`,
+            })
+            .where(eq(organisationsCredits.organisationId, ctx.organisationId));
+        } else {
+          // Update balance (deduct credits) - only if sufficient
+          await tx
+            .update(organisationsCredits)
+            .set({
+              balance: newBalance,
+              updatedAt: sql`CURRENT_TIMESTAMP`,
+            })
+            .where(eq(organisationsCredits.organisationId, ctx.organisationId));
 
-        await tx.insert(creditsLedger).values({
-          organisationId: ctx.organisationId,
-          userId: null,
-          delta: -totalCents,
-          service,
-          reason,
-          externalRef,
-        });
+          // Log the charge to creditLogs table
+          await tx.insert(creditLogs).values({
+            organisationId: ctx.organisationId,
+            costCents: totalCents,
+            service: ctx.appName, // App name/service name
+          });
+        }
       });
     },
 

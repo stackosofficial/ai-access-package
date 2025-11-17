@@ -48,9 +48,20 @@ export const creditsLedger = pgTable('credits_ledger', {
     .references(() => organisations.id, { onDelete: 'cascade' }),
   userId: uuid('user_id'),
   delta: integer('delta').notNull(), // signed cents
-  service: text('service').notNull(),
-  reason: text('reason'),
-  externalRef: text('external_ref'),
+  stripeCustomerId: text('stripe_customer_id'), // For Stripe credit additions
+  stripeSubscriptionId: text('stripe_subscription_id'), // For Stripe credit additions
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Credit logs table - logs charges made by this SDK
+export const creditLogs = pgTable('credit_logs', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  organisationId: uuid('organisation_id')
+    .notNull()
+    .references(() => organisations.id, { onDelete: 'cascade' }),
+  costCents: integer('cost_cents').notNull(), // Cost charged in cents
+  service: text('service').notNull(), // App name/service name
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -146,6 +157,7 @@ export function createDrizzleClient(pool: Pool) {
       creditsLedger,
       backendBaseCosts,
       requests,
+      creditLogs,
       usersRelations,
       organisationsRelations,
       apiKeysRelations,
