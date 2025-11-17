@@ -29,10 +29,10 @@ export const aiModelResponseSchema = z.object({
  */
 export const requestPayloadSchema = z.object({
   prompt: z.string().min(1, 'Prompt is required and cannot be empty'),
-  system_prompt: z.string().optional(),
+  system_prompt: z.union([z.string(), z.array(z.string())]).optional(),
   response_format: z
     .object({
-      type: z.literal('json_object'),
+      type: z.enum(['json_object', 'json_schema']),
       schema: z.record(z.string(), z.unknown()),
     })
     .optional(),
