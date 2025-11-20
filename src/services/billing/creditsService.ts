@@ -19,9 +19,10 @@ export function createCreditsService(pool: Pool) {
       ctx: CreditsContext,
       prompt: string,
       systemPrompt: string | undefined,
-      model: string | undefined
+      model: string | undefined,
+      agentId: string | undefined
     ): TE.TaskEither<Error, string> {
-      return CreditsAPI.logRequestStart(pool, ctx, prompt, systemPrompt, model);
+      return CreditsAPI.logRequestStart(pool, ctx, prompt, systemPrompt, model, agentId);
     },
 
     logRequestEnd(

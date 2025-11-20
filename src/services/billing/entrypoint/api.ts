@@ -95,7 +95,8 @@ export const logRequestStart = (
   ctx: unknown,
   prompt: unknown,
   systemPrompt: unknown,
-  model: unknown
+  model: unknown,
+  agentId: unknown
 ): TE.TaskEither<Error, string> => {
   const repository = createCreditsRepository(pool);
   const db = createDrizzleClient(pool);
@@ -112,15 +113,21 @@ export const logRequestStart = (
               pipe(
                 validateOptionalString(model, 'model'),
                 TE.chain(validatedModel =>
-                  CreditsDomain.logRequestStart(
-                    repository,
-                    async (fn: (tx: DrizzleTransaction) => Promise<void>) => {
-                      await db.transaction(fn);
-                    },
-                    validatedCtx,
-                    validatedPrompt,
-                    validatedSystemPrompt,
-                    validatedModel
+                  pipe(
+                    validateOptionalString(agentId, 'agentId'),
+                    TE.chain(validatedAgentId =>
+                      CreditsDomain.logRequestStart(
+                        repository,
+                        async (fn: (tx: DrizzleTransaction) => Promise<void>) => {
+                          await db.transaction(fn);
+                        },
+                        validatedCtx,
+                        validatedPrompt,
+                        validatedSystemPrompt,
+                        validatedModel,
+                        validatedAgentId
+                      )
+                    )
                   )
                 )
               )

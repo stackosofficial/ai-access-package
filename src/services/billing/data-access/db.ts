@@ -8,6 +8,7 @@ import {
   creditLogs,
   organisationsCredits,
   requests,
+  userAgents,
 } from '../../../database/drizzleClient';
 
 // Drizzle transaction type - inferred from the transaction callback parameter
@@ -29,11 +30,13 @@ export interface CreditsRepository {
   insertRequest(
     organisationId: string,
     apiKeyId: string | null,
+    agentId: string | null,
     prompt: string,
     systemPrompt: string | null,
     model: string | null,
     txOrDb: DrizzleTransaction
   ): TE.TaskEither<Error, string>;
+  validateAgentId(agentId: string, organisationId: string): TE.TaskEither<Error, boolean>;
   updateRequest(
     requestId: string,
     costDollars: number,
@@ -184,6 +187,7 @@ export function createCreditsRepository(pool: Pool): CreditsRepository {
     insertRequest(
       organisationId: string,
       apiKeyId: string | null,
+      agentId: string | null,
       prompt: string,
       systemPrompt: string | null,
       model: string | null,
@@ -196,6 +200,7 @@ export function createCreditsRepository(pool: Pool): CreditsRepository {
             .values({
               organisationId,
               apiKeyId,
+              agentId,
               prompt,
               systemPrompt,
               model,
@@ -208,6 +213,31 @@ export function createCreditsRepository(pool: Pool): CreditsRepository {
           return row.id;
         },
         error => (error instanceof Error ? error : new Error('Failed to insert request'))
+      );
+    },
+
+    validateAgentId(agentId: string, organisationId: string): TE.TaskEither<Error, boolean> {
+      return TE.tryCatch(
+        async () => {
+          const [agent] = await db
+            .select({ id: userAgents.id })
+            .from(userAgents)
+            .where(eq(userAgents.id, agentId))
+            .limit(1);
+
+          if (!agent) {
+            return false;
+          }
+
+          const [agentWithOrg] = await db
+            .select({ organisationId: userAgents.organisationId })
+            .from(userAgents)
+            .where(eq(userAgents.id, agentId))
+            .limit(1);
+
+          return agentWithOrg?.organisationId === organisationId;
+        },
+        error => (error instanceof Error ? error : new Error('Failed to validate agent ID'))
       );
     },
 

@@ -245,11 +245,36 @@ export const initAIAccessPoint = async (
       // Use void to satisfy Express middleware signature, but execute async code
       void (async () => {
         try {
+          // Validate agentId if provided
+          if (req.organisationId) {
+            const body = req.body as Record<string, unknown>;
+            const agentId = typeof body.agentId === 'string' ? body.agentId : undefined;
+
+            if (agentId) {
+              const validateResult = await repository.validateAgentId(agentId, req.organisationId)();
+
+              if (validateResult._tag === 'Left') {
+                return res.status(400).json({
+                  success: false,
+                  error: 'Failed to validate agent ID',
+                });
+              }
+
+              if (!validateResult.right) {
+                return res.status(403).json({
+                  success: false,
+                  error: 'Agent ID does not belong to your organisation',
+                });
+              }
+            }
+          }
+
           // Log request start
           if (req.organisationId) {
             const body = req.body as Record<string, unknown>;
             const prompt = (typeof body.prompt === 'string' ? body.prompt : '') || '';
             const systemPrompt = typeof body.systemPrompt === 'string' ? body.systemPrompt : undefined;
+            const agentId = typeof body.agentId === 'string' ? body.agentId : undefined;
 
             const logStartResult = await creditsService.logRequestStart(
               {
@@ -259,7 +284,8 @@ export const initAIAccessPoint = async (
               },
               prompt,
               systemPrompt,
-              undefined // model is not available at this point
+              undefined, // model is not available at this point
+              agentId
             )();
 
             if (logStartResult._tag === 'Right') {

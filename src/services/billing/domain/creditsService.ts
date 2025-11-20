@@ -154,7 +154,8 @@ export const logRequestStart = (
   ctx: CreditsContext,
   prompt: string,
   systemPrompt: string | undefined,
-  model: string | undefined
+  model: string | undefined,
+  agentId: string | undefined
 ): TE.TaskEither<Error, string> => {
   const validatePrompt = (p: string): TE.TaskEither<Error, string> => {
     return TE.fromEither(
@@ -202,6 +203,7 @@ export const logRequestStart = (
                     const result = await repository.insertRequest(
                       ctx.organisationId,
                       ctx.apiKeyId ?? null,
+                      agentId ?? null,
                       validatedPrompt,
                       validatedSystemPrompt ?? null,
                       validatedModel ?? null,

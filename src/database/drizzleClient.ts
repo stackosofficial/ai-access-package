@@ -1,6 +1,6 @@
 import { relations } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
-import { boolean, integer, numeric, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { boolean, integer, jsonb, numeric, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { Pool } from 'pg';
 
 // --- Existing core tables from user management service ---
@@ -45,6 +45,24 @@ export const referrals = pgTable('referrals', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+// User agents table
+export const userAgents = pgTable('user_agents', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  organisationId: uuid('organisation_id')
+    .notNull()
+    .references(() => organisations.id, { onDelete: 'cascade' }),
+  agentUuid: uuid('agent_uuid'),
+  name: text('name').notNull(),
+  description: text('description'),
+  image: text('image'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  subnetList: jsonb('subnet_list').notNull(),
+  layout: jsonb('layout'),
+  isDeployed: boolean('is_deployed').notNull().default(false),
+  isVerified: boolean('is_verified').notNull().default(false),
+});
+
 export const organisationsCredits = pgTable('organisations_credits', {
   organisationId: uuid('organisation_id')
     .primaryKey()
@@ -84,6 +102,9 @@ export const requests = pgTable('requests', {
   apiKeyId: uuid('api_key_id').references(() => apiKeys.id, {
     onDelete: 'set null',
   }),
+  agentId: uuid('agent_id').references(() => userAgents.id, {
+    onDelete: 'set null',
+  }),
   prompt: text('prompt').notNull(),
   systemPrompt: text('system_prompt'),
   model: text('model'),
@@ -111,6 +132,7 @@ export const organisationsRelations = relations(organisations, ({ one, many }) =
     references: [organisationsCredits.organisationId],
   }),
   requests: many(requests),
+  userAgents: many(userAgents),
 }));
 
 export const apiKeysRelations = relations(apiKeys, ({ one, many }) => ({
@@ -135,6 +157,13 @@ export const organisationsCreditsRelations = relations(organisationsCredits, ({ 
   }),
 }));
 
+export const userAgentsRelations = relations(userAgents, ({ one }) => ({
+  organisation: one(organisations, {
+    fields: [userAgents.organisationId],
+    references: [organisations.id],
+  }),
+}));
+
 export const requestsRelations = relations(requests, ({ one }) => ({
   organisation: one(organisations, {
     fields: [requests.organisationId],
@@ -143,6 +172,10 @@ export const requestsRelations = relations(requests, ({ one }) => ({
   apiKey: one(apiKeys, {
     fields: [requests.apiKeyId],
     references: [apiKeys.id],
+  }),
+  agent: one(userAgents, {
+    fields: [requests.agentId],
+    references: [userAgents.id],
   }),
 }));
 
@@ -155,6 +188,7 @@ export function createDrizzleClient(pool: Pool) {
       organisations,
       apiKeys,
       referrals,
+      userAgents,
       organisationsCredits,
       backendBaseCosts,
       requests,
@@ -163,6 +197,7 @@ export function createDrizzleClient(pool: Pool) {
       organisationsRelations,
       apiKeysRelations,
       referralsRelations,
+      userAgentsRelations,
       organisationsCreditsRelations,
       requestsRelations,
     },

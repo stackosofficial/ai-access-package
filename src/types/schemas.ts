@@ -36,6 +36,7 @@ export const requestPayloadSchema = z.object({
       schema: z.record(z.string(), z.unknown()),
     })
     .optional(),
+  agentId: z.string().uuid('agentId must be a valid UUID').optional(),
 });
 
 /**
@@ -79,6 +80,7 @@ export const fileInputSchema = z.object({
 export const multipartFormDataSchema = z.object({
   prompt: z.string().min(1, 'Prompt is required and cannot be empty'),
   system_prompt: z.string().optional(),
+  agentId: z.string().uuid('agentId must be a valid UUID').optional(),
   files: z.array(fileInputSchema).optional(),
 });
 

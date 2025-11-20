@@ -1,5 +1,5 @@
 // Export AI Service types
-export type { RequestPayload, ResponseHandlerData, AIModelResponse } from '../types/schemas';
+export type { RequestPayload, ResponseHandlerData, AIModelResponse, FileInput, MultipartFormData } from '../types/schemas';
 
 // Export Zod schemas for validation (MUST USE FOR VALIDATION)
 export {
@@ -8,6 +8,8 @@ export {
   aiModelResponseSchema,
   envDefinitionSchema,
   creditsContextSchema,
+  multipartFormDataSchema,
+  fileInputSchema,
 } from '../types/schemas';
 
 // Export ResponseHandler interface
