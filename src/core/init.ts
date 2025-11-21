@@ -5,6 +5,9 @@ import { Pool } from 'pg';
 import { createDrizzleClient } from '../database/drizzleClient';
 import { createApiKeyAuthMiddleware } from '../middleware/auth';
 import { type AIModelResponse, executeAICall } from '../services/AIService/entrypoint';
+import { createAuthRepository } from '../services/auth/data-access/authRepository';
+import { createAuthEndpoints } from '../services/auth/entrypoint/authEndpoints';
+import type { AuthService } from '../services/auth/types';
 import { createCreditsService } from '../services/billing/creditsService';
 import { createCreditsRepository } from '../services/billing/data-access/db';
 import type { RequestPayload } from '../types/schemas';
@@ -197,11 +200,16 @@ export type RunNaturalFunctionType = (
 
 // Legacy AIAccessPointConfig removed - configuration is now via environment only.
 
+export interface InitOptions {
+  authService?: AuthService;
+}
+
 export const initAIAccessPoint = async (
   env: unknown,
   app: express.Application,
   runNaturalFunction: RunNaturalFunctionType,
-  upload?: multer.Multer
+  upload?: multer.Multer,
+  options?: InitOptions
 ): Promise<{ success: boolean; data?: AIService; error?: Error }> => {
   try {
     // Validate environment configuration with Zod
@@ -262,12 +270,12 @@ export const initAIAccessPoint = async (
 
               if (!validateResult.right) {
                 return res.status(403).json({
-                success: false,
+                  success: false,
                   error: 'User agent ID does not belong to your organisation',
-              });
+                });
+              }
             }
           }
-        }
 
           // Log request start
           if (req.organisationId) {
@@ -386,7 +394,18 @@ export const initAIAccessPoint = async (
     } else {
       app.post('/natural-request', wrappedApiKeyAuth, handleRequest);
     }
-      
+
+    // Register auth endpoints if authService is provided
+    if (options?.authService) {
+      const authRepository = createAuthRepository(pool);
+      const authEndpoints = createAuthEndpoints(authRepository, options.authService, validatedEnv.appName);
+
+      app.post('/auth/check', wrappedApiKeyAuth, authEndpoints.checkAuth);
+      app.post('/auth/generate', wrappedApiKeyAuth, authEndpoints.generateAuth);
+      app.post('/auth/save', wrappedApiKeyAuth, authEndpoints.saveAuth);
+      app.delete('/auth/revoke', wrappedApiKeyAuth, authEndpoints.revokeAuth);
+    }
+
     // Add global error handling middleware
     app.use((error: unknown, _req: Request, res: Response, _next: NextFunction): void => {
       console.error('❌ [GLOBAL ERROR HANDLER] Unhandled error:', error);

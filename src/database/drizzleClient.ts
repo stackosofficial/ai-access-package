@@ -114,6 +114,21 @@ export const requests = pgTable('requests', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Auth table for third-party authentication (Google, Twitter, etc.)
+export const auth = pgTable('auth', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  organisationId: uuid('organisation_id')
+    .notNull()
+    .references(() => organisations.id, { onDelete: 'cascade' }),
+  userAgentId: uuid('user_agent_id').references(() => userAgents.id, {
+    onDelete: 'cascade',
+  }),
+  authService: text('auth_service').notNull(), // Service name (appName)
+  authData: jsonb('auth_data').notNull(), // JSON data for auth tokens/credentials
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 // --- Drizzle Relations ---
 
 export const usersRelations = relations(users, ({ many, one }) => ({
@@ -179,6 +194,17 @@ export const requestsRelations = relations(requests, ({ one }) => ({
   }),
 }));
 
+export const authRelations = relations(auth, ({ one }) => ({
+  organisation: one(organisations, {
+    fields: [auth.organisationId],
+    references: [organisations.id],
+  }),
+  userAgent: one(userAgents, {
+    fields: [auth.userAgentId],
+    references: [userAgents.id],
+  }),
+}));
+
 // --- Drizzle client factory ---
 
 export function createDrizzleClient(pool: Pool) {
@@ -193,6 +219,7 @@ export function createDrizzleClient(pool: Pool) {
       backendBaseCosts,
       requests,
       creditLogs,
+      auth,
       usersRelations,
       organisationsRelations,
       apiKeysRelations,
@@ -200,6 +227,7 @@ export function createDrizzleClient(pool: Pool) {
       userAgentsRelations,
       organisationsCreditsRelations,
       requestsRelations,
+      authRelations,
     },
   });
 }
