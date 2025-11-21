@@ -94,7 +94,7 @@ const callOpenRouterAPI = (requestData: AIModelRequest): TE.TaskEither<Error, AI
 
           const response = await axios({
             method: 'POST',
-            url: 'https://openrouter-c0n623.stackos.io/api/ai',
+            url: 'https://skynetai-s1.stackos.io/api/ai',
             data: requestPayload,
             headers,
           });
