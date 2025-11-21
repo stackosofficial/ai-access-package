@@ -2,6 +2,8 @@
 
 This guide explains how to implement third-party authentication (Google, Twitter, etc.) in your service using the AI Access Point SDK. The SDK provides endpoints and interfaces for managing authentication with external providers.
 
+**Package Version**: `@decloudlabs/ap@0.0.9`
+
 ## Table of Contents
 
 1. [Overview](#overview)
@@ -26,11 +28,12 @@ The SDK provides a flexible authentication system that allows services to integr
 
 ### How It Works
 
-1. **Service Implementation**: Your service implements the `AuthService` interface with three methods
-2. **SDK Endpoints**: The SDK provides four endpoints for managing auth:
+1. **Service Implementation**: Your service implements the `AuthService` interface with four methods
+2. **SDK Endpoints**: The SDK provides five endpoints for managing auth:
    - `POST /auth/check` - Check if authentication exists
    - `POST /auth/generate` - Generate authentication link
    - `POST /auth/save` - Save authentication data after OAuth callback
+   - `PUT /auth/update` - Update authentication data when tokens are refreshed
    - `DELETE /auth/revoke` - Revoke/delete authentication
 3. **Database Storage**: Auth data is stored in the `auth` table with proper unique constraints
 
@@ -43,6 +46,30 @@ The auth service feature is included in the SDK. No additional packages are requ
 ```bash
 npm install @decloudlabs/ap zod fp-ts
 ```
+
+## Type Exports
+
+All required types are exported from the SDK:
+
+```typescript
+import { initAIAccessPoint, type AuthService, type InitOptions, type AuthRecord } from '@decloudlabs/ap';
+```
+
+**Available Exports**:
+
+- `AuthService` - Interface your service must implement
+- `InitOptions` - Options for SDK initialization (includes `authService?`)
+- `AuthRecord` - Type for auth records in the database
+- `initAIAccessPoint` - Main initialization function with signature:
+  ```typescript
+  initAIAccessPoint(
+    env: unknown,
+    app: express.Application,
+    runNaturalFunction: RunNaturalFunctionType,
+    upload?: multer.Multer,
+    options?: InitOptions  // 5th parameter - optional
+  ): Promise<{ success: boolean; data?: AIService; error?: Error }>
+  ```
 
 ---
 
@@ -61,11 +88,7 @@ interface AuthService {
    * @param authService - Service name (appName)
    * @returns Promise resolving to boolean indicating if auth exists
    */
-  checkAuth(
-    userAgentId: string | null,
-    organisationId: string,
-    authService: string
-  ): Promise<boolean>;
+  checkAuth(userAgentId: string | null, organisationId: string, authService: string): Promise<boolean>;
 
   /**
    * Save authentication data after successful authentication
@@ -89,11 +112,22 @@ interface AuthService {
    * @param authService - Service name (appName)
    * @returns Promise resolving to auth link/URL
    */
-  generateAuth(
+  generateAuth(userAgentId: string | null, organisationId: string, authService: string): Promise<{ authLink: string }>;
+
+  /**
+   * Update authentication data when tokens are refreshed
+   * @param userAgentId - Optional user agent ID (null for org-level auth)
+   * @param organisationId - Organisation ID
+   * @param authService - Service name (appName)
+   * @param authData - Updated authentication data (refreshed tokens, etc.)
+   * @returns Promise resolving when update is complete
+   */
+  updateAuth(
     userAgentId: string | null,
     organisationId: string,
-    authService: string
-  ): Promise<{ authLink: string }>;
+    authService: string,
+    authData: Record<string, unknown>
+  ): Promise<void>;
 }
 ```
 
@@ -118,11 +152,7 @@ class GoogleAuthService implements AuthService {
     );
   }
 
-  async checkAuth(
-    userAgentId: string | null,
-    organisationId: string,
-    authService: string
-  ): Promise<boolean> {
+  async checkAuth(userAgentId: string | null, organisationId: string, authService: string): Promise<boolean> {
     // Check if you have stored tokens for this combination
     // This is a simple example - you might want to check token validity
     // by making a test API call to Google
@@ -148,17 +178,26 @@ class GoogleAuthService implements AuthService {
   ): Promise<{ authLink: string }> {
     // Generate OAuth URL with state parameter
     const state = JSON.stringify({ userAgentId, organisationId, authService });
-    
+
     const authUrl = this.oauth2Client.generateAuthUrl({
       access_type: 'offline',
-      scope: [
-        'https://www.googleapis.com/auth/gmail.readonly',
-        'https://www.googleapis.com/auth/calendar.readonly',
-      ],
+      scope: ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/calendar.readonly'],
       state: state,
     });
 
     return { authLink: authUrl };
+  }
+
+  async updateAuth(
+    userAgentId: string | null,
+    organisationId: string,
+    authService: string,
+    authData: Record<string, unknown>
+  ): Promise<void> {
+    // Update stored tokens when they are refreshed
+    // This is called when OAuth tokens are refreshed
+    // The SDK will also update it in the database automatically
+    console.log('Updating auth data:', { userAgentId, organisationId, authService, authData });
   }
 }
 ```
@@ -179,11 +218,7 @@ class TwitterAuthService implements AuthService {
     this.redirectUri = process.env.TWITTER_REDIRECT_URI!;
   }
 
-  async checkAuth(
-    userAgentId: string | null,
-    organisationId: string,
-    authService: string
-  ): Promise<boolean> {
+  async checkAuth(userAgentId: string | null, organisationId: string, authService: string): Promise<boolean> {
     // Check if tokens exist and are valid
     // You might want to make a test API call to Twitter
     return false; // Implement your logic
@@ -207,7 +242,7 @@ class TwitterAuthService implements AuthService {
     // Generate Twitter OAuth 2.0 URL
     const state = JSON.stringify({ userAgentId, organisationId, authService });
     const scopes = ['tweet.read', 'users.read'];
-    
+
     const params = new URLSearchParams({
       response_type: 'code',
       client_id: this.clientId,
@@ -220,6 +255,16 @@ class TwitterAuthService implements AuthService {
 
     const authUrl = `https://twitter.com/i/oauth2/authorize?${params.toString()}`;
     return { authLink: authUrl };
+  }
+
+  async updateAuth(
+    userAgentId: string | null,
+    organisationId: string,
+    authService: string,
+    authData: Record<string, unknown>
+  ): Promise<void> {
+    // Update Twitter tokens when refreshed
+    console.log('Updating Twitter auth:', { userAgentId, organisationId, authService, authData });
   }
 }
 ```
@@ -278,10 +323,12 @@ The SDK automatically registers these endpoints when `authService` is provided:
 **Endpoint**: `POST /auth/check`
 
 **Headers**:
+
 - `x-api-key`: Your API key (required)
 - `Content-Type`: `application/json`
 
 **Request Body**:
+
 ```json
 {
   "userAgentId": "uuid-of-agent" // Optional
@@ -289,6 +336,7 @@ The SDK automatically registers these endpoints when `authService` is provided:
 ```
 
 **Response** (Auth exists):
+
 ```json
 {
   "success": true,
@@ -302,6 +350,7 @@ The SDK automatically registers these endpoints when `authService` is provided:
 ```
 
 **Response** (Auth doesn't exist):
+
 ```json
 {
   "success": true,
@@ -310,6 +359,7 @@ The SDK automatically registers these endpoints when `authService` is provided:
 ```
 
 **Example cURL**:
+
 ```bash
 curl -X POST http://localhost:3000/auth/check \
   -H "Content-Type: application/json" \
@@ -324,10 +374,12 @@ curl -X POST http://localhost:3000/auth/check \
 **Endpoint**: `POST /auth/generate`
 
 **Headers**:
+
 - `x-api-key`: Your API key (required)
 - `Content-Type`: `application/json`
 
 **Request Body**:
+
 ```json
 {
   "userAgentId": "uuid-of-agent" // Optional
@@ -335,6 +387,7 @@ curl -X POST http://localhost:3000/auth/check \
 ```
 
 **Response**:
+
 ```json
 {
   "success": true,
@@ -343,6 +396,7 @@ curl -X POST http://localhost:3000/auth/check \
 ```
 
 **Example cURL**:
+
 ```bash
 curl -X POST http://localhost:3000/auth/generate \
   -H "Content-Type: application/json" \
@@ -357,10 +411,12 @@ curl -X POST http://localhost:3000/auth/generate \
 **Endpoint**: `POST /auth/save`
 
 **Headers**:
+
 - `x-api-key`: Your API key (required)
 - `Content-Type`: `application/json`
 
 **Request Body**:
+
 ```json
 {
   "userAgentId": "uuid-of-agent", // Optional
@@ -374,6 +430,7 @@ curl -X POST http://localhost:3000/auth/generate \
 ```
 
 **Response**:
+
 ```json
 {
   "success": true,
@@ -382,6 +439,7 @@ curl -X POST http://localhost:3000/auth/generate \
 ```
 
 **Example cURL**:
+
 ```bash
 curl -X POST http://localhost:3000/auth/save \
   -H "Content-Type: application/json" \
@@ -396,15 +454,76 @@ curl -X POST http://localhost:3000/auth/save \
   }'
 ```
 
-### 4. Revoke Auth
+### 4. Update Auth
 
-**Endpoint**: `DELETE /auth/revoke`
+**Endpoint**: `PUT /auth/update`
 
 **Headers**:
+
 - `x-api-key`: Your API key (required)
 - `Content-Type`: `application/json`
 
 **Request Body**:
+
+```json
+{
+  "userAgentId": "uuid-of-agent", // Optional
+  "authData": {
+    "accessToken": "new-refreshed-token",
+    "refreshToken": "refresh-token",
+    "expiresAt": "2024-01-02T00:00:00Z",
+    "tokenType": "Bearer"
+  }
+}
+```
+
+**Response**:
+
+```json
+{
+  "success": true,
+  "message": "Auth updated successfully"
+}
+```
+
+**Error Response** (Auth not found):
+
+```json
+{
+  "success": false,
+  "error": "Auth record not found - cannot update"
+}
+```
+
+**Example cURL**:
+
+```bash
+curl -X PUT http://localhost:3000/auth/update \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: your-api-key-here" \
+  -d '{
+    "userAgentId": "123e4567-e89b-12d3-a456-426614174000",
+    "authData": {
+      "accessToken": "ya29.new-refreshed-token...",
+      "refreshToken": "1//0g...",
+      "expiresAt": "2024-01-02T00:00:00Z"
+    }
+  }'
+```
+
+**Note**: This endpoint is specifically for updating existing auth records when tokens are refreshed. If the auth record doesn't exist, it will return an error. Use `POST /auth/save` to create a new auth record.
+
+### 5. Revoke Auth
+
+**Endpoint**: `DELETE /auth/revoke`
+
+**Headers**:
+
+- `x-api-key`: Your API key (required)
+- `Content-Type`: `application/json`
+
+**Request Body**:
+
 ```json
 {
   "userAgentId": "uuid-of-agent" // Optional
@@ -412,6 +531,7 @@ curl -X POST http://localhost:3000/auth/save \
 ```
 
 **Response**:
+
 ```json
 {
   "success": true,
@@ -420,6 +540,7 @@ curl -X POST http://localhost:3000/auth/save \
 ```
 
 **Example cURL**:
+
 ```bash
 curl -X DELETE http://localhost:3000/auth/revoke \
   -H "Content-Type: application/json" \
@@ -438,12 +559,7 @@ Here's a complete example of a service with Google OAuth:
 ```typescript
 import express from 'express';
 import { google } from 'googleapis';
-import {
-  initAIAccessPoint,
-  type AuthService,
-  type InitOptions,
-  type RunNaturalFunctionType,
-} from '@decloudlabs/ap';
+import { initAIAccessPoint, type AuthService, type InitOptions, type RunNaturalFunctionType } from '@decloudlabs/ap';
 
 const app = express();
 app.use(express.json());
@@ -462,19 +578,13 @@ class GoogleAuthService implements AuthService {
   }
 
   private getKey(userAgentId: string | null, organisationId: string, authService: string): string {
-    return userAgentId
-      ? `${userAgentId}:${authService}`
-      : `${organisationId}:${authService}`;
+    return userAgentId ? `${userAgentId}:${authService}` : `${organisationId}:${authService}`;
   }
 
-  async checkAuth(
-    userAgentId: string | null,
-    organisationId: string,
-    authService: string
-  ): Promise<boolean> {
+  async checkAuth(userAgentId: string | null, organisationId: string, authService: string): Promise<boolean> {
     const key = this.getKey(userAgentId, organisationId, authService);
     const tokens = this.tokenStore.get(key);
-    
+
     if (!tokens) {
       return false;
     }
@@ -504,28 +614,30 @@ class GoogleAuthService implements AuthService {
     authService: string
   ): Promise<{ authLink: string }> {
     const state = JSON.stringify({ userAgentId, organisationId, authService });
-    
+
     const authUrl = this.oauth2Client.generateAuthUrl({
       access_type: 'offline',
-      scope: [
-        'https://www.googleapis.com/auth/gmail.readonly',
-        'https://www.googleapis.com/auth/calendar.readonly',
-      ],
+      scope: ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/calendar.readonly'],
       state: state,
     });
 
     return { authLink: authUrl };
   }
+
+  async updateAuth(
+    userAgentId: string | null,
+    organisationId: string,
+    authService: string,
+    authData: Record<string, unknown>
+  ): Promise<void> {
+    const key = this.getKey(userAgentId, organisationId, authService);
+    this.tokenStore.set(key, authData);
+    console.log(`Auth updated for key: ${key}`);
+  }
 }
 
 // Your handler function
-const runNaturalFunction: RunNaturalFunctionType = async (
-  req,
-  res,
-  aiService,
-  responseHandler,
-  creditsService
-) => {
+const runNaturalFunction: RunNaturalFunctionType = async (req, res, aiService, responseHandler, creditsService) => {
   // Your implementation
   responseHandler.sendFinalResponse({
     success: true,
@@ -558,7 +670,7 @@ console.log('✅ SDK initialized with Google auth service');
 // OAuth callback handler (you need to implement this separately)
 app.get('/oauth/callback', async (req, res) => {
   const { code, state } = req.query;
-  
+
   try {
     const stateData = JSON.parse(state as string);
     const { userAgentId, organisationId, authService } = stateData;
@@ -580,7 +692,7 @@ app.get('/oauth/callback', async (req, res) => {
     });
 
     const result = await response.json();
-    
+
     if (result.success) {
       res.send('Authentication successful! You can close this window.');
     } else {
@@ -622,6 +734,7 @@ CREATE TABLE auth (
 - **If `userAgentId` is null**: Unique on `(organisation_id, auth_service)` where `user_agent_id IS NULL`
 
 This allows:
+
 - Organisation-level auth (when `userAgentId` is null)
 - Agent-specific auth (when `userAgentId` is provided)
 
@@ -632,32 +745,38 @@ This allows:
 ### Common Errors
 
 **401 Unauthorized**:
+
 ```json
 {
   "success": false,
   "error": "Organisation ID not found"
 }
 ```
+
 - **Cause**: API key is invalid or missing
 - **Solution**: Ensure `x-api-key` header is present and valid
 
 **400 Bad Request**:
+
 ```json
 {
   "success": false,
   "error": "Validation failed: userAgentId: userAgentId must be a valid UUID"
 }
 ```
+
 - **Cause**: Invalid request body format
 - **Solution**: Ensure `userAgentId` is a valid UUID if provided
 
 **500 Internal Server Error**:
+
 ```json
 {
   "success": false,
   "error": "Failed to check auth"
 }
 ```
+
 - **Cause**: Database error or service implementation error
 - **Solution**: Check your service logs and database connection
 
@@ -696,4 +815,3 @@ npm run db:migrate
 ## Support
 
 For issues or questions, refer to the SDK documentation or contact the development team.
-

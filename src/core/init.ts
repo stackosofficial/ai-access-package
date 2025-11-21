@@ -403,6 +403,7 @@ export const initAIAccessPoint = async (
       app.post('/auth/check', wrappedApiKeyAuth, authEndpoints.checkAuth);
       app.post('/auth/generate', wrappedApiKeyAuth, authEndpoints.generateAuth);
       app.post('/auth/save', wrappedApiKeyAuth, authEndpoints.saveAuth);
+      app.put('/auth/update', wrappedApiKeyAuth, authEndpoints.updateAuth);
       app.delete('/auth/revoke', wrappedApiKeyAuth, authEndpoints.revokeAuth);
     }
 

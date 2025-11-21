@@ -35,6 +35,21 @@ export interface AuthService {
    * @returns Promise resolving to auth link/URL
    */
   generateAuth(userAgentId: string | null, organisationId: string, authService: string): Promise<{ authLink: string }>;
+
+  /**
+   * Update authentication data when tokens are refreshed
+   * @param userAgentId - Optional user agent ID (null for org-level auth)
+   * @param organisationId - Organisation ID
+   * @param authService - Service name (appName)
+   * @param authData - Updated authentication data (refreshed tokens, etc.)
+   * @returns Promise resolving when update is complete
+   */
+  updateAuth(
+    userAgentId: string | null,
+    organisationId: string,
+    authService: string,
+    authData: Record<string, unknown>
+  ): Promise<void>;
 }
 
 /**

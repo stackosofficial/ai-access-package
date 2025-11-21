@@ -13,6 +13,11 @@ const saveAuthRequestSchema = z.object({
   authData: z.record(z.string(), z.unknown()),
 });
 
+const updateAuthRequestSchema = z.object({
+  userAgentId: z.string().uuid('userAgentId must be a valid UUID').optional(),
+  authData: z.record(z.string(), z.unknown()),
+});
+
 export function createAuthEndpoints(repository: AuthRepository, authService: AuthService, appName: string) {
   return {
     checkAuth: (req: Request, res: Response): void => {
@@ -239,6 +244,66 @@ export function createAuthEndpoints(repository: AuthRepository, authService: Aut
           res.status(200).json({
             success: true,
             message: 'Auth saved successfully',
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          res.status(500).json({
+            success: false,
+            error: errorMessage,
+          });
+        }
+      })();
+    },
+
+    updateAuth: (req: Request, res: Response): void => {
+      void (async () => {
+        try {
+          if (!req.organisationId) {
+            res.status(401).json({
+              success: false,
+              error: 'Organisation ID not found',
+            });
+            return;
+          }
+
+          // Validate request body
+          const validation = updateAuthRequestSchema.safeParse(req.body);
+          if (!validation.success) {
+            const errorMessages = validation.error.issues
+              .map(issue => `${issue.path.join('.')}: ${issue.message}`)
+              .join(', ');
+            res.status(400).json({
+              success: false,
+              error: `Validation failed: ${errorMessages}`,
+            });
+            return;
+          }
+
+          const userAgentId = validation.data.userAgentId ?? null;
+          const authData = validation.data.authData;
+
+          // Validate userAgentId belongs to organisation if provided
+          if (userAgentId) {
+            // This validation should be done by the SDK middleware before reaching here
+          }
+
+          // Update auth data using service's updateAuth function
+          await authService.updateAuth(userAgentId, req.organisationId, appName, authData);
+
+          // Also update in database
+          const updateResult = await repository.updateAuth(req.organisationId, userAgentId, appName, authData)();
+
+          if (updateResult._tag === 'Left') {
+            res.status(500).json({
+              success: false,
+              error: updateResult.left.message || 'Failed to update auth',
+            });
+            return;
+          }
+
+          res.status(200).json({
+            success: true,
+            message: 'Auth updated successfully',
           });
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';

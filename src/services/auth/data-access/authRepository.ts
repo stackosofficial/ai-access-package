@@ -17,6 +17,12 @@ export interface AuthRepository {
     authService: string,
     authData: Record<string, unknown>
   ): TE.TaskEither<Error, string>;
+  updateAuth(
+    organisationId: string,
+    userAgentId: string | null,
+    authService: string,
+    authData: Record<string, unknown>
+  ): TE.TaskEither<Error, void>;
   deleteAuth(organisationId: string, userAgentId: string | null, authService: string): TE.TaskEither<Error, void>;
 }
 
@@ -100,6 +106,42 @@ export function createAuthRepository(pool: Pool): AuthRepository {
           }
         },
         error => (error instanceof Error ? error : new Error('Failed to save auth'))
+      );
+    },
+
+    updateAuth(
+      organisationId: string,
+      userAgentId: string | null,
+      authService: string,
+      authData: Record<string, unknown>
+    ): TE.TaskEither<Error, void> {
+      return TE.tryCatch(
+        async () => {
+          // Check if auth exists
+          const existing = await this.findAuth(organisationId, userAgentId, authService)();
+
+          if (existing._tag === 'Left') {
+            throw existing.left;
+          }
+
+          if (!existing.right) {
+            throw new Error('Auth record not found - cannot update');
+          }
+
+          // Update existing auth
+          const whereCondition = userAgentId
+            ? and(eq(auth.userAgentId, userAgentId), eq(auth.authService, authService))
+            : and(eq(auth.organisationId, organisationId), eq(auth.authService, authService), isNull(auth.userAgentId));
+
+          await db
+            .update(auth)
+            .set({
+              authData,
+              updatedAt: new Date(),
+            })
+            .where(whereCondition);
+        },
+        error => (error instanceof Error ? error : new Error('Failed to update auth'))
       );
     },
 
