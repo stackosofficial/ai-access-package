@@ -245,36 +245,36 @@ export const initAIAccessPoint = async (
       // Use void to satisfy Express middleware signature, but execute async code
       void (async () => {
         try {
-          // Validate agentId if provided
+          // Validate userAgentId if provided
           if (req.organisationId) {
             const body = req.body as Record<string, unknown>;
-            const agentId = typeof body.agentId === 'string' ? body.agentId : undefined;
+            const userAgentId = typeof body.userAgentId === 'string' ? body.userAgentId : undefined;
 
-            if (agentId) {
-              const validateResult = await repository.validateAgentId(agentId, req.organisationId)();
+            if (userAgentId) {
+              const validateResult = await repository.validateUserAgentId(userAgentId, req.organisationId)();
 
               if (validateResult._tag === 'Left') {
                 return res.status(400).json({
                   success: false,
-                  error: 'Failed to validate agent ID',
+                  error: 'Failed to validate user agent ID',
                 });
               }
 
               if (!validateResult.right) {
                 return res.status(403).json({
-                  success: false,
-                  error: 'Agent ID does not belong to your organisation',
-                });
-              }
+                success: false,
+                  error: 'User agent ID does not belong to your organisation',
+              });
             }
           }
+        }
 
           // Log request start
           if (req.organisationId) {
             const body = req.body as Record<string, unknown>;
             const prompt = (typeof body.prompt === 'string' ? body.prompt : '') || '';
             const systemPrompt = typeof body.systemPrompt === 'string' ? body.systemPrompt : undefined;
-            const agentId = typeof body.agentId === 'string' ? body.agentId : undefined;
+            const userAgentId = typeof body.userAgentId === 'string' ? body.userAgentId : undefined;
 
             const logStartResult = await creditsService.logRequestStart(
               {
@@ -285,7 +285,7 @@ export const initAIAccessPoint = async (
               prompt,
               systemPrompt,
               undefined, // model is not available at this point
-              agentId
+              userAgentId
             )();
 
             if (logStartResult._tag === 'Right') {
@@ -386,7 +386,7 @@ export const initAIAccessPoint = async (
     } else {
       app.post('/natural-request', wrappedApiKeyAuth, handleRequest);
     }
-
+      
     // Add global error handling middleware
     app.use((error: unknown, _req: Request, res: Response, _next: NextFunction): void => {
       console.error('❌ [GLOBAL ERROR HANDLER] Unhandled error:', error);

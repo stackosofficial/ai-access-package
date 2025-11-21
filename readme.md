@@ -12,7 +12,7 @@ The `sky-ai-accesspoint` package provides a secure and efficient way to manage A
 ## Installation
 
 ```bash
-npm install @decloudlabs/sky-ai-accesspoint
+npm install @decloudlabs/ap
 ```
 
 ## Environment Configuration
@@ -41,19 +41,14 @@ OPENAI_API_KEY=<your-openai-api-key>
 Here's how to initialize and use the AI Access Point:
 
 ```typescript
-import express from "express";
-import { initAIAccessPoint } from "@decloudlabs/sky-ai-accesspoint";
-import SkyMainNodeJS from "@decloudlabs/skynet/lib/services/SkyMainNodeJS";
+import express from 'express';
+import { initAIAccessPoint } from '@decloudlabs/ap';
 
 const app = express();
 app.use(express.json());
 
 // Define your natural language processing function
-const runNaturalFunction = async (
-  req: Request,
-  res: Response,
-  balanceRunMain: BalanceRunMain
-) => {
+const runNaturalFunction = async (req: Request, res: Response, balanceRunMain: BalanceRunMain) => {
   try {
     // Extract the request parameters
     const { messages } = req.body;
@@ -64,8 +59,8 @@ const runNaturalFunction = async (
     // Send the response
     res.json(response);
   } catch (error) {
-    console.error("Error processing request:", error);
-    res.status(500).json({ error: "Failed to process request" });
+    console.error('Error processing request:', error);
+    res.status(500).json({ error: 'Failed to process request' });
   }
 };
 
@@ -81,7 +76,7 @@ const main = async () => {
     FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL!,
     FIREBASE_PRIVATE_KEY: process.env.FIREBASE_PRIVATE_KEY!,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY!,
-    SERVER_COST_CONTRACT_ADDRESS: "", // Will be set automatically
+    SERVER_COST_CONTRACT_ADDRESS: '', // Will be set automatically
   };
 
   const balanceRunMain = await initAIAccessPoint(
@@ -93,7 +88,7 @@ const main = async () => {
   );
 
   app.listen(3000, () => {
-    console.log("Server running on port 3000");
+    console.log('Server running on port 3000');
   });
 };
 
@@ -107,21 +102,21 @@ The package exposes a `/natural-request` endpoint that handles AI requests. Here
 ```typescript
 // Example request
 const request = {
-  method: "POST",
+  method: 'POST',
   headers: {
-    "Content-Type": "application/json",
-    Authorization: "Bearer <your-auth-token>",
+    'Content-Type': 'application/json',
+    Authorization: 'Bearer <your-auth-token>',
   },
   body: JSON.stringify({
     accountNFT: {
-      collectionID: "your-collection-id",
-      nftID: "your-nft-id",
+      collectionID: 'your-collection-id',
+      nftID: 'your-nft-id',
     },
-    prompt: "process this request",
+    prompt: 'process this request',
     userAuthPayload: {
-      message: "1713033600000",
-      signature: "0x123",
-      userAddress: "0x123",
+      message: '1713033600000',
+      signature: '0x123',
+      userAddress: '0x123',
     }, // get this by calling skynet.appManager.getUrsulaAuth()
   }),
 };
@@ -136,9 +131,9 @@ The package automatically handles cost tracking for NFT-based access. Costs are 
 const addCost = async (accountNFT, cost) => {
   const response = await balanceRunMain.addCost(accountNFT, cost);
   if (response.success) {
-    console.log("Cost added successfully");
+    console.log('Cost added successfully');
   } else {
-    console.error("Failed to add cost:", response.data);
+    console.error('Failed to add cost:', response.data);
   }
 };
 ```
@@ -154,11 +149,7 @@ function initAIAccessPoint(
   env: ENVDefinition,
   skyNode: SkyMainNodeJS,
   app: express.Application,
-  runNaturalFunction: (
-    req: Request,
-    res: Response,
-    balanceRunMain: BalanceRunMain
-  ) => Promise<void>,
+  runNaturalFunction: (req: Request, res: Response, balanceRunMain: BalanceRunMain) => Promise<void>,
   runUpdate: boolean
 ): Promise<BalanceRunMain>;
 ```
@@ -181,19 +172,13 @@ The package supports optional third-party authentication. When no auth service i
 #### No Authentication (Default)
 
 ```typescript
-const balanceRunMain = await initAIAccessPoint(
-  env,
-  skyNode,
-  app,
-  runNaturalFunction,
-  true
-);
+const balanceRunMain = await initAIAccessPoint(env, skyNode, app, runNaturalFunction, true);
 ```
 
 #### With Custom Authentication
 
 ```typescript
-import { AuthService } from '@decloudlabs/sky-ai-accesspoint';
+import { AuthService } from '@decloudlabs/ap';
 
 class MyCustomAuthService extends AuthService {
   async generateAuthLink(userAddress: string, nftId: string): Promise<string> {
@@ -210,7 +195,7 @@ const balanceRunMain = await initAIAccessPoint(
   true,
   undefined, // upload
   {
-    authServiceClass: MyCustomAuthService
+    authServiceClass: MyCustomAuthService,
   }
 );
 ```
@@ -235,10 +220,10 @@ The package provides detailed error handling and logging:
 try {
   const response = await balanceRunMain.addCost(accountNFT, cost);
   if (!response.success) {
-    console.error("Operation failed:", response.data);
+    console.error('Operation failed:', response.data);
   }
 } catch (error) {
-  console.error("Unexpected error:", error);
+  console.error('Unexpected error:', error);
 }
 ```
 

@@ -102,7 +102,7 @@ export const requests = pgTable('requests', {
   apiKeyId: uuid('api_key_id').references(() => apiKeys.id, {
     onDelete: 'set null',
   }),
-  agentId: uuid('agent_id').references(() => userAgents.id, {
+  userAgentId: uuid('agent_id').references(() => userAgents.id, {
     onDelete: 'set null',
   }),
   prompt: text('prompt').notNull(),
@@ -174,7 +174,7 @@ export const requestsRelations = relations(requests, ({ one }) => ({
     references: [apiKeys.id],
   }),
   agent: one(userAgents, {
-    fields: [requests.agentId],
+    fields: [requests.userAgentId],
     references: [userAgents.id],
   }),
 }));
