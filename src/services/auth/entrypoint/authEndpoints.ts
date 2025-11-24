@@ -73,13 +73,22 @@ export function createAuthEndpoints(repository: AuthRepository, authService: Aut
             return;
           }
 
-          // Also check with service's checkAuth function
-          const serviceCheck = await authService.checkAuth(userAgentId, req.organisationId, appName);
+          // Also check with service's checkAuth function (optional validation)
+          // This checks if the auth is still valid with the third-party service
+          let serviceCheck: boolean | undefined;
+          try {
+            serviceCheck = await authService.checkAuth(userAgentId, req.organisationId, appName);
+          } catch (error) {
+            // If service check fails, we still return the auth data
+            // The service check is optional validation
+            console.warn('Service auth check failed:', error);
+          }
 
           res.status(200).json({
             success: true,
-            exists: serviceCheck,
+            exists: true, // Auth exists in database
             authData: authRecord.authData,
+            ...(serviceCheck !== undefined && { isValid: serviceCheck }), // Optional: include service validation result
           });
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';

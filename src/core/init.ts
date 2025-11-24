@@ -5,6 +5,7 @@ import { Pool } from 'pg';
 import { createDrizzleClient } from '../database/drizzleClient';
 import { createApiKeyAuthMiddleware } from '../middleware/auth';
 import { type AIModelResponse, executeAICall } from '../services/AIService/entrypoint';
+import { type AuthDataService, createAuthDataService } from '../services/auth/authService';
 import { createAuthRepository } from '../services/auth/data-access/authRepository';
 import { createAuthEndpoints } from '../services/auth/entrypoint/authEndpoints';
 import type { AuthService } from '../services/auth/types';
@@ -181,6 +182,7 @@ export class ResponseHandlerImpl implements ResponseHandler {
 // AI Service interface for compatibility
 export interface AIService {
   callAIModel(params: RequestPayload): Promise<AIModelResponse>;
+  auth: AuthDataService;
 }
 
 // Credits service interface for runNaturalFunction
@@ -239,6 +241,7 @@ export const initAIAccessPoint = async (
     // Initialize API-key auth and credits service
     const apiKeyAuth = createApiKeyAuthMiddleware(pool);
     const creditsService = createCreditsService(pool);
+    const authDataService = createAuthDataService(pool, validatedEnv.appName);
 
     // Ensure base cost exists for this app during initialization
     const repository = createCreditsRepository(pool);
@@ -315,6 +318,7 @@ export const initAIAccessPoint = async (
 
               return result.data;
             },
+            auth: authDataService,
           };
 
           const responseHandler = new ResponseHandlerImpl(req, res);
@@ -444,6 +448,7 @@ export const initAIAccessPoint = async (
           }
           return result.data;
         },
+        auth: authDataService,
       } as AIService,
     };
   } catch (error: unknown) {
