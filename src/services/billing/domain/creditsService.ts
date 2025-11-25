@@ -131,8 +131,9 @@ export const addCost = (
                 throw updateResult.left;
               }
 
-              // Log the charge (store in dollars)
-              const logResult = await repository.insertCreditLog(ctx.organisationId, totalDollars, ctx.appName, tx)();
+              // Log the charge (convert dollars to cents)
+              const costCents = Math.round(totalDollars * 100);
+              const logResult = await repository.insertCreditLog(ctx.organisationId, costCents, ctx.appName, tx)();
               if (logResult._tag === 'Left') {
                 throw logResult.left;
               }

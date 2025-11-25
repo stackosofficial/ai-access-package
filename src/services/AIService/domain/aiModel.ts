@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { pipe } from 'fp-ts/function';
 import * as TE from 'fp-ts/TaskEither';
 
 import type { RequestPayload } from '../../../types/schemas';
@@ -21,26 +20,6 @@ export interface AIModelResponse {
   content: string;
   error?: string;
 }
-
-const validateSystemPrompt = (systemPrompt?: string | string[]): TE.TaskEither<Error, void> => {
-  if (!systemPrompt) {
-    return TE.right(undefined);
-  }
-
-  const forbiddenKeywords = ['endpoint', 'route', 'api ', 'webhook', 'callback', 'wallet', 'address'];
-  const prompts = Array.isArray(systemPrompt) ? systemPrompt : [systemPrompt];
-
-  for (const prompt of prompts) {
-    const lower = prompt.toLowerCase();
-    const hit = forbiddenKeywords.find(k => lower.includes(k));
-
-    if (hit) {
-      return TE.left(new Error(`System prompt rejected due to security policy (contains: ${hit})`));
-    }
-  }
-
-  return TE.right(undefined);
-};
 
 const callOpenRouterAPI = (requestData: AIModelRequest): TE.TaskEither<Error, AIModelResponse> => {
   return TE.tryCatch(
@@ -158,17 +137,11 @@ export const callAIModel = (
   userSystemPrompt?: string,
   apiKey?: string
 ): TE.TaskEither<Error, AIModelResponse> => {
-  return pipe(
-    validateSystemPrompt(params.system_prompt),
-    TE.chain(() => validateSystemPrompt(userSystemPrompt)),
-    TE.chain(() =>
-      callOpenRouterAPI({
-        prompt: params.prompt,
-        system_prompt: params.system_prompt,
-        systemPrompt: userSystemPrompt,
-        response_format: params.response_format,
-        apiKey,
-      })
-    )
-  );
+  return callOpenRouterAPI({
+    prompt: params.prompt,
+    system_prompt: params.system_prompt,
+    systemPrompt: userSystemPrompt,
+    response_format: params.response_format,
+    apiKey,
+  });
 };

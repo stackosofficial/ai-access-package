@@ -23,7 +23,7 @@ export interface CreditsRepository {
   updateBalance(organisationId: string, newBalance: number, tx: DrizzleTransaction): TE.TaskEither<Error, void>;
   insertCreditLog(
     organisationId: string,
-    costDollars: number,
+    costCents: number,
     service: string,
     tx: DrizzleTransaction
   ): TE.TaskEither<Error, void>;
@@ -168,7 +168,7 @@ export function createCreditsRepository(pool: Pool): CreditsRepository {
 
     insertCreditLog(
       organisationId: string,
-      costDollars: number,
+      costCents: number,
       service: string,
       tx: DrizzleTransaction
     ): TE.TaskEither<Error, void> {
@@ -176,7 +176,7 @@ export function createCreditsRepository(pool: Pool): CreditsRepository {
         async () => {
           await tx.insert(creditLogs).values({
             organisationId,
-            costDollars,
+            costCents,
             service,
           });
         },

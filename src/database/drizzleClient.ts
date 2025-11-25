@@ -79,8 +79,12 @@ export const creditLogs = pgTable('credit_logs', {
   organisationId: uuid('organisation_id')
     .notNull()
     .references(() => organisations.id, { onDelete: 'cascade' }),
-  costDollars: numeric('cost_dollars', { precision: 10, scale: 2, mode: 'number' }).notNull(), // Cost charged in dollars
+  costCents: integer('cost_cents').notNull(), // Cost charged in cents
   service: text('service').notNull(), // App name/service name
+  serviceName: text('service_name'), // Optional service name
+  stripeCustomerId: text('stripe_customer_id'), // Stripe customer ID
+  stripeSubscriptionId: text('stripe_subscription_id'), // Stripe subscription ID
+  description: text('description'), // Optional description
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
