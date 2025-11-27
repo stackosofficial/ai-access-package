@@ -9,6 +9,7 @@ declare module 'express-serve-static-core' {
   interface Request {
     organisationId?: string;
     apiKeyId?: string;
+    userAgentId?: string;
     user?: {
       id: string;
       clerkUserId: string;
