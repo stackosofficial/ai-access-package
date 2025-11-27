@@ -37,17 +37,39 @@ export function createAuthRepository(pool: Pool): AuthRepository {
     ): TE.TaskEither<Error, AuthRecord | null> {
       return TE.tryCatch(
         async () => {
-          // If userAgentId is provided, use (userAgentId, authService) as unique
+          // Normalize userAgentId: treat empty string as null
+          const normalizedUserAgentId = userAgentId && userAgentId.trim() !== '' ? userAgentId.trim() : null;
+
+          // Always verify organisationId for security
+          // If userAgentId is provided, use (organisationId, userAgentId, authService) as unique
           // If userAgentId is null, use (organisationId, authService) as unique
-          const whereCondition = userAgentId
-            ? and(eq(auth.userAgentId, userAgentId), eq(auth.authService, authService))
+          const whereCondition = normalizedUserAgentId
+            ? and(
+                eq(auth.organisationId, organisationId),
+                eq(auth.userAgentId, normalizedUserAgentId),
+                eq(auth.authService, authService)
+              )
             : and(eq(auth.organisationId, organisationId), eq(auth.authService, authService), isNull(auth.userAgentId));
 
           const [record] = await db.select().from(auth).where(whereCondition).limit(1);
 
           if (!record) {
+            // Debug logging to help troubleshoot retrieval issues
+            console.log('🔍 findAuth: No record found', {
+              organisationId,
+              userAgentId: normalizedUserAgentId,
+              authService,
+              queryType: normalizedUserAgentId ? 'with userAgentId' : 'org-level',
+            });
             return null;
           }
+
+          console.log('✅ findAuth: Record found', {
+            id: record.id,
+            organisationId: record.organisationId,
+            userAgentId: record.userAgentId,
+            authService: record.authService,
+          });
 
           return {
             id: record.id,
@@ -71,8 +93,11 @@ export function createAuthRepository(pool: Pool): AuthRepository {
     ): TE.TaskEither<Error, string> {
       return TE.tryCatch(
         async () => {
+          // Normalize userAgentId: treat empty string as null
+          const normalizedUserAgentId = userAgentId && userAgentId.trim() !== '' ? userAgentId.trim() : null;
+
           // Check if auth already exists
-          const existing = await this.findAuth(organisationId, userAgentId, authService)();
+          const existing = await this.findAuth(organisationId, normalizedUserAgentId, authService)();
 
           if (existing._tag === 'Left') {
             throw existing.left;
@@ -96,7 +121,7 @@ export function createAuthRepository(pool: Pool): AuthRepository {
               .insert(auth)
               .values({
                 organisationId,
-                userAgentId,
+                userAgentId: normalizedUserAgentId,
                 authService,
                 authData,
               })
@@ -117,8 +142,11 @@ export function createAuthRepository(pool: Pool): AuthRepository {
     ): TE.TaskEither<Error, void> {
       return TE.tryCatch(
         async () => {
+          // Normalize userAgentId: treat empty string as null
+          const normalizedUserAgentId = userAgentId && userAgentId.trim() !== '' ? userAgentId.trim() : null;
+
           // Check if auth exists
-          const existing = await this.findAuth(organisationId, userAgentId, authService)();
+          const existing = await this.findAuth(organisationId, normalizedUserAgentId, authService)();
 
           if (existing._tag === 'Left') {
             throw existing.left;
@@ -128,9 +156,13 @@ export function createAuthRepository(pool: Pool): AuthRepository {
             throw new Error('Auth record not found - cannot update');
           }
 
-          // Update existing auth
-          const whereCondition = userAgentId
-            ? and(eq(auth.userAgentId, userAgentId), eq(auth.authService, authService))
+          // Update existing auth - always verify organisationId for security
+          const whereCondition = normalizedUserAgentId
+            ? and(
+                eq(auth.organisationId, organisationId),
+                eq(auth.userAgentId, normalizedUserAgentId),
+                eq(auth.authService, authService)
+              )
             : and(eq(auth.organisationId, organisationId), eq(auth.authService, authService), isNull(auth.userAgentId));
 
           await db
@@ -148,8 +180,16 @@ export function createAuthRepository(pool: Pool): AuthRepository {
     deleteAuth(organisationId: string, userAgentId: string | null, authService: string): TE.TaskEither<Error, void> {
       return TE.tryCatch(
         async () => {
-          const whereCondition = userAgentId
-            ? and(eq(auth.userAgentId, userAgentId), eq(auth.authService, authService))
+          // Normalize userAgentId: treat empty string as null
+          const normalizedUserAgentId = userAgentId && userAgentId.trim() !== '' ? userAgentId.trim() : null;
+
+          // Always verify organisationId for security
+          const whereCondition = normalizedUserAgentId
+            ? and(
+                eq(auth.organisationId, organisationId),
+                eq(auth.userAgentId, normalizedUserAgentId),
+                eq(auth.authService, authService)
+              )
             : and(eq(auth.organisationId, organisationId), eq(auth.authService, authService), isNull(auth.userAgentId));
 
           await db.delete(auth).where(whereCondition);
