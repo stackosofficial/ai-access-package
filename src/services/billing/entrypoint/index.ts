@@ -1,1 +1,1 @@
-export { addCost, checkBalance, logRequestEnd, logRequestStart } from './api';
+export { addCost, addCredits, checkBalance, logRequestEnd, logRequestStart } from './api';

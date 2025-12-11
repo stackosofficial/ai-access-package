@@ -1,9 +1,10 @@
+import { and, eq } from 'drizzle-orm';
 import { pipe } from 'fp-ts/function';
 import * as TE from 'fp-ts/TaskEither';
 import { Pool } from 'pg';
 import { z } from 'zod';
 
-import { createDrizzleClient } from '../../../database/drizzleClient';
+import { apiKeys, createDrizzleClient } from '../../../database/drizzleClient';
 import { type CreditsContext, creditsContextSchema } from '../../../types/schemas';
 import { createCreditsRepository } from '../data-access/db';
 import * as CreditsDomain from '../domain/creditsService';
@@ -84,6 +85,68 @@ export const addCost = (pool: Pool, ctx: unknown, amountDollars: unknown): TE.Ta
         )
       )
     )
+  );
+};
+
+/**
+ * Add credits entrypoint: Validate API key, extract organisationId, then call domain logic
+ */
+export const addCredits = (
+  pool: Pool,
+  apiKey: unknown,
+  creditsToAdd: unknown,
+  appName: string
+): TE.TaskEither<Error, void> => {
+  const repository = createCreditsRepository(pool);
+  const db = createDrizzleClient(pool);
+
+  return pipe(
+    validateApiKey(apiKey, pool),
+    TE.chain(organisationId =>
+      pipe(
+        validateDollarAmount(creditsToAdd),
+        TE.chain(amount =>
+          CreditsDomain.addCredits(
+            repository,
+            async (fn: (tx: DrizzleTransaction) => Promise<void>) => {
+              await db.transaction(fn);
+            },
+            organisationId,
+            amount,
+            appName
+          )
+        )
+      )
+    )
+  );
+};
+
+/**
+ * Validate API key and extract organisationId
+ */
+const validateApiKey = (apiKey: unknown, pool: Pool): TE.TaskEither<Error, string> => {
+  if (typeof apiKey !== 'string' || apiKey.trim().length === 0) {
+    return TE.left(new Error('API key must be a non-empty string'));
+  }
+
+  return TE.tryCatch(
+    async () => {
+      const db = createDrizzleClient(pool);
+
+      const record = await db.query.apiKeys.findFirst({
+        where: and(eq(apiKeys.apiKey, apiKey.trim()), eq(apiKeys.isActive, true)),
+        with: {
+          organisation: true,
+        },
+      });
+
+      if (!record || record.revokedAt || !record.organisation) {
+        throw new Error('Invalid or inactive API key');
+      }
+
+      return record.organisationId;
+    },
+    error => (error instanceof Error ? error : new Error('Failed to validate API key'))
   );
 };
 

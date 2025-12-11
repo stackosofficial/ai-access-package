@@ -240,7 +240,7 @@ export const initAIAccessPoint = async (
 
     // Initialize API-key auth and credits service
     const apiKeyAuth = createApiKeyAuthMiddleware(pool);
-    const creditsService = createCreditsService(pool);
+    const creditsService = createCreditsService(pool, validatedEnv.appName);
     const authDataService = createAuthDataService(pool, validatedEnv.appName);
 
     // Ensure base cost exists for this app during initialization
@@ -273,12 +273,12 @@ export const initAIAccessPoint = async (
 
               if (!validateResult.right) {
                 return res.status(403).json({
-                  success: false,
+                success: false,
                   error: 'User agent ID does not belong to your organisation',
-                });
-              }
+              });
             }
           }
+        }
 
           // Log request start
           if (req.organisationId) {
@@ -410,7 +410,7 @@ export const initAIAccessPoint = async (
       app.put('/auth/update', wrappedApiKeyAuth, authEndpoints.updateAuth);
       app.delete('/auth/revoke', wrappedApiKeyAuth, authEndpoints.revokeAuth);
     }
-
+      
     // Add global error handling middleware
     app.use((error: unknown, _req: Request, res: Response, _next: NextFunction): void => {
       console.error('❌ [GLOBAL ERROR HANDLER] Unhandled error:', error);

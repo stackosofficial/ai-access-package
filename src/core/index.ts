@@ -33,3 +33,6 @@ export {
 // Export auth types
 export type { AuthService, AuthRecord } from '../services/auth/types';
 export type { AuthDataService } from '../services/auth/authService';
+
+// Export credits functions
+export { addCredits } from '../services/billing/addCredits';

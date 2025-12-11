@@ -5,7 +5,7 @@ import type { CreditsContext } from '../../types/schemas';
 
 import * as CreditsAPI from './entrypoint';
 
-export function createCreditsService(pool: Pool) {
+export function createCreditsService(pool: Pool, appName: string) {
   return {
     checkBalance(ctx: CreditsContext, requiredDollars: string): TE.TaskEither<Error, boolean> {
       return CreditsAPI.checkBalance(pool, ctx, requiredDollars);
@@ -13,6 +13,10 @@ export function createCreditsService(pool: Pool) {
 
     addCost(ctx: CreditsContext, amountDollars: string): TE.TaskEither<Error, void> {
       return CreditsAPI.addCost(pool, ctx, amountDollars);
+    },
+
+    addCredits(apiKey: string, creditsToAdd: string): TE.TaskEither<Error, void> {
+      return CreditsAPI.addCredits(pool, apiKey, creditsToAdd, appName);
     },
 
     logRequestStart(

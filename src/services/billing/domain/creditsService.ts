@@ -147,6 +147,58 @@ export const addCost = (
 };
 
 /**
+ * Add credits to organisation (increase balance)
+ */
+export const addCredits = (
+  repository: CreditsRepository,
+  executeTransaction: TransactionExecutor,
+  organisationId: string,
+  amountDollars: string,
+  appName: string
+): TE.TaskEither<Error, void> => {
+  return pipe(
+    roundDollarAmount(amountDollars),
+    TE.chain(roundedAmount => dollarsToNumber(roundedAmount)),
+    TE.chain(creditsToAdd =>
+      TE.tryCatch(
+        async () => {
+          await executeTransaction(async tx => {
+            // Ensure org credits row exists
+            const ensureResult = await repository.ensureOrganisationCreditsExists(organisationId, tx)();
+            if (ensureResult._tag === 'Left') {
+              throw ensureResult.left;
+            }
+
+            // Fetch current balance with row lock
+            const balanceResult = await repository.getBalanceWithLock(organisationId, tx)();
+            if (balanceResult._tag === 'Left') {
+              throw balanceResult.left;
+            }
+
+            const currentBalance = balanceResult.right;
+            const newBalance = currentBalance + creditsToAdd;
+
+            // Update balance
+            const updateResult = await repository.updateBalance(organisationId, newBalance, tx)();
+            if (updateResult._tag === 'Left') {
+              throw updateResult.left;
+            }
+
+            // Log the credit addition (convert dollars to cents, negative to indicate addition)
+            const creditsCents = Math.round(creditsToAdd * 100);
+            const logResult = await repository.insertCreditLog(organisationId, -creditsCents, appName, tx)();
+            if (logResult._tag === 'Left') {
+              throw logResult.left;
+            }
+          });
+        },
+        error => (error instanceof Error ? error : new Error('Failed to add credits'))
+      )
+    )
+  );
+};
+
+/**
  * Log request start
  */
 export const logRequestStart = (
