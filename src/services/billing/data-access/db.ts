@@ -59,9 +59,12 @@ export function createCreditsRepository(pool: Pool): CreditsRepository {
             .where(eq(organisationsCredits.organisationId, organisationId))
             .limit(1);
 
-          // Numeric type returns string, convert to number
-          const balance = row?.balance;
-          return balance !== undefined && balance !== null ? Number(balance) : 0;
+          // Balance is stored in cents (bigint), convert to dollars for API
+          const balanceCents = row?.balance;
+          if (balanceCents === undefined || balanceCents === null) {
+            return 0;
+          }
+          return Number(balanceCents) / 100; // Convert cents to dollars
         },
         error => (error instanceof Error ? error : new Error('Failed to get balance'))
       );
@@ -124,11 +127,12 @@ export function createCreditsRepository(pool: Pool): CreditsRepository {
     ensureOrganisationCreditsExists(organisationId: string, tx: DrizzleTransaction): TE.TaskEither<Error, void> {
       return TE.tryCatch(
         async () => {
+          // Balance is stored in cents (bigint), initialize to 0
           await tx
             .insert(organisationsCredits)
             .values({
               organisationId,
-              balance: 0.0,
+              balance: 0,
             })
             .onConflictDoNothing();
         },
@@ -143,9 +147,9 @@ export function createCreditsRepository(pool: Pool): CreditsRepository {
             sql`SELECT balance FROM organisations_credits WHERE organisation_id = ${organisationId} FOR UPDATE LIMIT 1`
           )) as { rows: Array<{ balance: string | number }> };
 
-          const balance = result.rows[0]?.balance;
-          // Numeric type returns string from raw SQL, convert to number
-          return balance !== undefined && balance !== null ? Number(balance) : 0;
+          // Balance is stored in cents (bigint), return as-is for internal calculations
+          const balanceCents = result.rows[0]?.balance;
+          return balanceCents !== undefined && balanceCents !== null ? Number(balanceCents) : 0;
         },
         error => (error instanceof Error ? error : new Error('Failed to get balance with lock'))
       );
@@ -154,10 +158,12 @@ export function createCreditsRepository(pool: Pool): CreditsRepository {
     updateBalance(organisationId: string, newBalance: number, tx: DrizzleTransaction): TE.TaskEither<Error, void> {
       return TE.tryCatch(
         async () => {
+          // newBalance is in cents (bigint), ensure it's an integer
+          const balanceCents = Math.round(newBalance);
           await tx
             .update(organisationsCredits)
             .set({
-              balance: newBalance,
+              balance: balanceCents,
               updatedAt: sql`CURRENT_TIMESTAMP`,
             })
             .where(eq(organisationsCredits.organisationId, organisationId));

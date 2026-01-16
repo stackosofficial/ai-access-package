@@ -69,12 +69,16 @@ export const checkBalance = (
   return pipe(
     roundDollarAmount(requiredDollars),
     TE.chain(roundedAmount => dollarsToNumber(roundedAmount)),
-    TE.chain(requiredDollarsNum =>
-      pipe(
+    TE.chain(requiredDollarsNum => {
+      const requiredCents = Math.round(requiredDollarsNum * 100); // Convert to cents
+      return pipe(
         repository.getBalance(ctx.organisationId),
-        TE.map(balance => balance >= requiredDollarsNum)
-      )
-    )
+        TE.map(balanceDollars => {
+          const balanceCents = Math.round(balanceDollars * 100); // Convert to cents for comparison
+          return balanceCents >= requiredCents;
+        })
+      );
+    })
   );
 };
 
@@ -115,25 +119,25 @@ export const addCost = (
               throw balanceResult.left;
             }
 
-            const currentBalance = balanceResult.right;
-            const newBalance = currentBalance - totalDollars;
+            const currentBalanceCents = balanceResult.right; // Balance is stored in cents
+            const totalCents = Math.round(totalDollars * 100); // Convert dollars to cents
+            const newBalanceCents = currentBalanceCents - totalCents;
 
             // If balance would go negative, set to 0
-            if (newBalance < 0) {
+            if (newBalanceCents < 0) {
               const updateResult = await repository.updateBalance(ctx.organisationId, 0, tx)();
               if (updateResult._tag === 'Left') {
                 throw updateResult.left;
               }
             } else {
-              // Update balance
-              const updateResult = await repository.updateBalance(ctx.organisationId, newBalance, tx)();
+              // Update balance (in cents)
+              const updateResult = await repository.updateBalance(ctx.organisationId, newBalanceCents, tx)();
               if (updateResult._tag === 'Left') {
                 throw updateResult.left;
               }
 
-              // Log the charge (convert dollars to cents)
-              const costCents = Math.round(totalDollars * 100);
-              const logResult = await repository.insertCreditLog(ctx.organisationId, costCents, ctx.appName, tx)();
+              // Log the charge (in cents)
+              const logResult = await repository.insertCreditLog(ctx.organisationId, totalCents, ctx.appName, tx)();
               if (logResult._tag === 'Left') {
                 throw logResult.left;
               }
@@ -175,17 +179,17 @@ export const addCredits = (
               throw balanceResult.left;
             }
 
-            const currentBalance = balanceResult.right;
-            const newBalance = currentBalance + creditsToAdd;
+            const currentBalanceCents = balanceResult.right; // Balance is stored in cents
+            const creditsCents = Math.round(creditsToAdd * 100); // Convert dollars to cents
+            const newBalanceCents = currentBalanceCents + creditsCents;
 
-            // Update balance
-            const updateResult = await repository.updateBalance(organisationId, newBalance, tx)();
+            // Update balance (in cents)
+            const updateResult = await repository.updateBalance(organisationId, newBalanceCents, tx)();
             if (updateResult._tag === 'Left') {
               throw updateResult.left;
             }
 
-            // Log the credit addition (convert dollars to cents, negative to indicate addition)
-            const creditsCents = Math.round(creditsToAdd * 100);
+            // Log the credit addition (negative to indicate addition)
             const logResult = await repository.insertCreditLog(organisationId, -creditsCents, appName, tx)();
             if (logResult._tag === 'Left') {
               throw logResult.left;

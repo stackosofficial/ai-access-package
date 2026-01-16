@@ -1,6 +1,6 @@
 import { relations } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
-import { boolean, integer, jsonb, numeric, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { bigint, boolean, integer, jsonb, numeric, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { Pool } from 'pg';
 
 // --- Existing core tables from user management service ---
@@ -67,7 +67,7 @@ export const organisationsCredits = pgTable('organisations_credits', {
   organisationId: uuid('organisation_id')
     .primaryKey()
     .references(() => organisations.id, { onDelete: 'cascade' }),
-  balance: numeric('balance', { precision: 10, scale: 2, mode: 'number' }).notNull().default(0), // Stored as dollars with 2 decimal places
+  balance: bigint('balance', { mode: 'number' }).notNull().default(0), // Stored as cents
   stripeCustomerId: text('stripe_customer_id'), // For Stripe credit additions
   stripeSubscriptionId: text('stripe_subscription_id'), // For Stripe credit additions
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
