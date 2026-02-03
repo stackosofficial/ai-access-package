@@ -107,41 +107,38 @@ export const addCost = (
       TE.tryCatch(
         async () => {
           await executeTransaction(async tx => {
-            // Ensure org credits row exists
-            const ensureResult = await repository.ensureOrganisationCreditsExists(ctx.organisationId, tx)();
-            if (ensureResult._tag === 'Left') {
-              throw ensureResult.left;
+            const ensureOrg = await repository.ensureOrganisationCreditsExists(ctx.organisationId, tx)();
+            if (ensureOrg._tag === 'Left') throw ensureOrg.left;
+
+            const ensureLifetime = await repository.ensureLifetimeCreditsExists(ctx.organisationId, tx)();
+            if (ensureLifetime._tag === 'Left') throw ensureLifetime.left;
+
+            const balancesResult = await repository.getBalancesWithLock(ctx.organisationId, tx)();
+            if (balancesResult._tag === 'Left') throw balancesResult.left;
+
+            const { orgCents, lifetimeCents } = balancesResult.right;
+            const totalCents = Math.round(totalDollars * 100);
+            const combinedCents = orgCents + lifetimeCents;
+
+            if (combinedCents < totalCents) {
+              throw new Error('Insufficient balance');
             }
 
-            // Fetch current balance with row lock
-            const balanceResult = await repository.getBalanceWithLock(ctx.organisationId, tx)();
-            if (balanceResult._tag === 'Left') {
-              throw balanceResult.left;
-            }
+            const deductFromOrg = Math.min(orgCents, totalCents);
+            const deductFromLifetime = totalCents - deductFromOrg;
 
-            const currentBalanceCents = balanceResult.right; // Balance is stored in cents
-            const totalCents = Math.round(totalDollars * 100); // Convert dollars to cents
-            const newBalanceCents = currentBalanceCents - totalCents;
+            const updateOrg = await repository.updateBalance(ctx.organisationId, orgCents - deductFromOrg, tx)();
+            if (updateOrg._tag === 'Left') throw updateOrg.left;
 
-            // If balance would go negative, set to 0
-            if (newBalanceCents < 0) {
-              const updateResult = await repository.updateBalance(ctx.organisationId, 0, tx)();
-              if (updateResult._tag === 'Left') {
-                throw updateResult.left;
-              }
-            } else {
-              // Update balance (in cents)
-              const updateResult = await repository.updateBalance(ctx.organisationId, newBalanceCents, tx)();
-              if (updateResult._tag === 'Left') {
-                throw updateResult.left;
-              }
+            const updateLifetime = await repository.updateLifetimeBalance(
+              ctx.organisationId,
+              lifetimeCents - deductFromLifetime,
+              tx
+            )();
+            if (updateLifetime._tag === 'Left') throw updateLifetime.left;
 
-              // Log the charge (in cents)
-              const logResult = await repository.insertCreditLog(ctx.organisationId, totalCents, ctx.appName, tx)();
-              if (logResult._tag === 'Left') {
-                throw logResult.left;
-              }
-            }
+            const logResult = await repository.insertCreditLog(ctx.organisationId, totalCents, ctx.appName, tx)();
+            if (logResult._tag === 'Left') throw logResult.left;
           });
         },
         error => (error instanceof Error ? error : new Error('Failed to add cost'))
@@ -173,13 +170,13 @@ export const addCredits = (
               throw ensureResult.left;
             }
 
-            // Fetch current balance with row lock
-            const balanceResult = await repository.getBalanceWithLock(organisationId, tx)();
-            if (balanceResult._tag === 'Left') {
-              throw balanceResult.left;
+            // Fetch current org balance with lock (addCredits only tops up organisation credits)
+            const balancesResult = await repository.getBalancesWithLock(organisationId, tx)();
+            if (balancesResult._tag === 'Left') {
+              throw balancesResult.left;
             }
 
-            const currentBalanceCents = balanceResult.right; // Balance is stored in cents
+            const currentBalanceCents = balancesResult.right.orgCents;
             const creditsCents = Math.round(creditsToAdd * 100); // Convert dollars to cents
             const newBalanceCents = currentBalanceCents + creditsCents;
 

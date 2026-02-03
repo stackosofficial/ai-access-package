@@ -6,6 +6,7 @@ import {
   backendBaseCosts,
   createDrizzleClient,
   creditLogs,
+  lifetimeCredits,
   organisationsCredits,
   requests,
   userAgents,
@@ -19,8 +20,17 @@ export interface CreditsRepository {
   getBalance(organisationId: string): TE.TaskEither<Error, number>;
   getBaseCost(appName: string): TE.TaskEither<Error, number>; // Returns base cost in dollars
   ensureOrganisationCreditsExists(organisationId: string, tx: DrizzleTransaction): TE.TaskEither<Error, void>;
-  getBalanceWithLock(organisationId: string, tx: DrizzleTransaction): TE.TaskEither<Error, number>;
+  ensureLifetimeCreditsExists(organisationId: string, tx: DrizzleTransaction): TE.TaskEither<Error, void>;
+  getBalancesWithLock(
+    organisationId: string,
+    tx: DrizzleTransaction
+  ): TE.TaskEither<Error, { orgCents: number; lifetimeCents: number }>;
   updateBalance(organisationId: string, newBalance: number, tx: DrizzleTransaction): TE.TaskEither<Error, void>;
+  updateLifetimeBalance(
+    organisationId: string,
+    newBalanceCents: number,
+    tx: DrizzleTransaction
+  ): TE.TaskEither<Error, void>;
   insertCreditLog(
     organisationId: string,
     costCents: number,
@@ -53,18 +63,20 @@ export function createCreditsRepository(pool: Pool): CreditsRepository {
     getBalance(organisationId: string): TE.TaskEither<Error, number> {
       return TE.tryCatch(
         async () => {
-          const [row] = await db
-            .select({ balance: organisationsCredits.balance })
-            .from(organisationsCredits)
-            .where(eq(organisationsCredits.organisationId, organisationId))
-            .limit(1);
-
-          // Balance is stored in cents (bigint), convert to dollars for API
-          const balanceCents = row?.balance;
-          if (balanceCents === undefined || balanceCents === null) {
+          // Combined balance: org credits + lifetime credits (both in cents)
+          const result = (await db.execute(
+            sql`
+              SELECT (COALESCE(oc.balance, 0) + COALESCE(lc.balance, 0)) AS total
+              FROM (SELECT 1) _
+              LEFT JOIN organisations_credits oc ON oc.organisation_id = ${organisationId}
+              LEFT JOIN lifetime_credits lc ON lc.organisation_id = ${organisationId}
+            `
+          )) as { rows: Array<{ total: string | number }> };
+          const totalCents = result.rows[0]?.total;
+          if (totalCents === undefined || totalCents === null) {
             return 0;
           }
-          return Number(balanceCents) / 100; // Convert cents to dollars
+          return Number(totalCents) / 100; // Convert cents to dollars
         },
         error => (error instanceof Error ? error : new Error('Failed to get balance'))
       );
@@ -140,18 +152,42 @@ export function createCreditsRepository(pool: Pool): CreditsRepository {
       );
     },
 
-    getBalanceWithLock(organisationId: string, tx: DrizzleTransaction): TE.TaskEither<Error, number> {
+    ensureLifetimeCreditsExists(organisationId: string, tx: DrizzleTransaction): TE.TaskEither<Error, void> {
       return TE.tryCatch(
         async () => {
-          const result = (await tx.execute(
+          await tx
+            .insert(lifetimeCredits)
+            .values({
+              organisationId,
+              balance: 0,
+            })
+            .onConflictDoNothing();
+        },
+        error => (error instanceof Error ? error : new Error('Failed to ensure lifetime credits exists'))
+      );
+    },
+
+    getBalancesWithLock(
+      organisationId: string,
+      tx: DrizzleTransaction
+    ): TE.TaskEither<Error, { orgCents: number; lifetimeCents: number }> {
+      return TE.tryCatch(
+        async () => {
+          // Lock order: organisations_credits first, then lifetime_credits (avoid deadlocks)
+          const orgResult = (await tx.execute(
             sql`SELECT balance FROM organisations_credits WHERE organisation_id = ${organisationId} FOR UPDATE LIMIT 1`
           )) as { rows: Array<{ balance: string | number }> };
-
-          // Balance is stored in cents (bigint), return as-is for internal calculations
-          const balanceCents = result.rows[0]?.balance;
-          return balanceCents !== undefined && balanceCents !== null ? Number(balanceCents) : 0;
+          const lifetimeResult = (await tx.execute(
+            sql`SELECT balance FROM lifetime_credits WHERE organisation_id = ${organisationId} FOR UPDATE LIMIT 1`
+          )) as { rows: Array<{ balance: string | number }> };
+          const orgCents = orgResult.rows[0]?.balance;
+          const lifetimeCents = lifetimeResult.rows[0]?.balance;
+          return {
+            orgCents: orgCents !== undefined && orgCents !== null ? Number(orgCents) : 0,
+            lifetimeCents: lifetimeCents !== undefined && lifetimeCents !== null ? Number(lifetimeCents) : 0,
+          };
         },
-        error => (error instanceof Error ? error : new Error('Failed to get balance with lock'))
+        error => (error instanceof Error ? error : new Error('Failed to get balances with lock'))
       );
     },
 
@@ -169,6 +205,26 @@ export function createCreditsRepository(pool: Pool): CreditsRepository {
             .where(eq(organisationsCredits.organisationId, organisationId));
         },
         error => (error instanceof Error ? error : new Error('Failed to update balance'))
+      );
+    },
+
+    updateLifetimeBalance(
+      organisationId: string,
+      newBalanceCents: number,
+      tx: DrizzleTransaction
+    ): TE.TaskEither<Error, void> {
+      return TE.tryCatch(
+        async () => {
+          const balanceCents = Math.round(newBalanceCents);
+          await tx
+            .update(lifetimeCredits)
+            .set({
+              balance: balanceCents,
+              updatedAt: sql`CURRENT_TIMESTAMP`,
+            })
+            .where(eq(lifetimeCredits.organisationId, organisationId));
+        },
+        error => (error instanceof Error ? error : new Error('Failed to update lifetime balance'))
       );
     },
 

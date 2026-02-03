@@ -73,6 +73,15 @@ export const organisationsCredits = pgTable('organisations_credits', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Lifetime credits table - credits that never expire, used when org credits are insufficient
+export const lifetimeCredits = pgTable('lifetime_credits', {
+  organisationId: uuid('organisation_id')
+    .primaryKey()
+    .references(() => organisations.id, { onDelete: 'cascade' }),
+  balance: bigint('balance', { mode: 'number' }).notNull().default(0), // Stored as cents
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 // Credit logs table - logs charges made by this SDK
 export const creditLogs = pgTable('credit_logs', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -150,6 +159,10 @@ export const organisationsRelations = relations(organisations, ({ one, many }) =
     fields: [organisations.id],
     references: [organisationsCredits.organisationId],
   }),
+  lifetimeCredits: one(lifetimeCredits, {
+    fields: [organisations.id],
+    references: [lifetimeCredits.organisationId],
+  }),
   requests: many(requests),
   userAgents: many(userAgents),
 }));
@@ -172,6 +185,13 @@ export const referralsRelations = relations(referrals, ({ one }) => ({
 export const organisationsCreditsRelations = relations(organisationsCredits, ({ one }) => ({
   organisation: one(organisations, {
     fields: [organisationsCredits.organisationId],
+    references: [organisations.id],
+  }),
+}));
+
+export const lifetimeCreditsRelations = relations(lifetimeCredits, ({ one }) => ({
+  organisation: one(organisations, {
+    fields: [lifetimeCredits.organisationId],
     references: [organisations.id],
   }),
 }));
@@ -220,6 +240,7 @@ export function createDrizzleClient(pool: Pool) {
       referrals,
       userAgents,
       organisationsCredits,
+      lifetimeCredits,
       backendBaseCosts,
       requests,
       creditLogs,
@@ -230,6 +251,7 @@ export function createDrizzleClient(pool: Pool) {
       referralsRelations,
       userAgentsRelations,
       organisationsCreditsRelations,
+      lifetimeCreditsRelations,
       requestsRelations,
       authRelations,
     },

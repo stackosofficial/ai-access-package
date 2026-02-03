@@ -21,7 +21,7 @@ interface FailedFolder {
 type PackageManager = 'pnpm' | 'yarn' | 'bun' | 'npm' | 'pms';
 
 // Configuration
-const SDK_NAME = '@decloudlabs/sky-ai-accesspoint';
+const SDK_NAME = '@decloudlabs/ap';  // Must match "name" in this package's package.json
 const SEARCH_PATH = '/Users/vijayankith/projects/stackai';
 
 // Read current version from package.json
