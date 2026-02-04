@@ -65,20 +65,26 @@ function findPackageJsonFiles(startPath: string = SEARCH_PATH): string[] {
       
       for (const item of items) {
         const fullPath = path.join(dir, item);
-        const stat = fs.statSync(fullPath);
-        
+        let stat: fs.Stats;
+        try {
+          stat = fs.statSync(fullPath);
+        } catch {
+          // Skip broken symlinks or inaccessible paths
+          continue;
+        }
+
         if (stat.isDirectory()) {
           // Skip node_modules and .git directories
           if (item === 'node_modules' || item === '.git') {
             continue;
           }
-          
+
           // Check if this directory has a package.json
           const packageJsonPath = path.join(fullPath, 'package.json');
           if (fs.existsSync(packageJsonPath)) {
             packageJsonFiles.push(packageJsonPath);
           }
-          
+
           // Recursively scan subdirectories
           scanDirectory(fullPath);
         }
@@ -286,6 +292,7 @@ function main(): void {
   
   let updatedCount = 0;
   let committedCount = 0;
+  let reposWithSdkCount = 0;
   const failedFolders: FailedFolder[] = [];
   
   for (const filePath of packageJsonFiles) {
@@ -306,9 +313,11 @@ function main(): void {
         log(`  - SDK not found, skipping`, 'yellow');
         continue;
       }
-      
+
+      reposWithSdkCount++;
+
       log(`  ✓ SDK found, checking version...`, 'green');
-      
+
       // Update the package.json
       const wasUpdated = updatePackageJson(filePath);
       
@@ -346,15 +355,7 @@ function main(): void {
         }
       } else {
         log(`  - Version already up to date`, 'yellow');
-        
-        // Only check for other changes if this repository contains the SDK
-        if (isGitRepository(dirPath)) {
-          log(`  📝 Checking for other changes to commit...`, 'cyan');
-          const wasCommitted = commitAndPush(dirPath);
-          if (wasCommitted) {
-            committedCount++;
-          }
-        }
+        // Do not commit/push when we didn't change the SDK version (avoids noisy chore commits for unrelated changes)
       }
       
     } catch (error) {
@@ -368,10 +369,10 @@ function main(): void {
   
   log('\n' + '='.repeat(50), 'cyan');
   log('📊 Summary:', 'bright');
-  log(`  • Files processed: ${packageJsonFiles.length}`, 'blue');
-  log(`  • Files updated: ${updatedCount}`, 'green');
-  log(`  • Changes committed: ${committedCount}`, 'green');
-  log(`  • Package installations: ${updatedCount}`, 'green');
+  log(`  • package.json files scanned: ${packageJsonFiles.length}`, 'blue');
+  log(`  • Repos with ${SDK_NAME}: ${reposWithSdkCount}`, 'blue');
+  log(`  • Version updated (and committed): ${updatedCount}`, 'green');
+  log(`  • Commits pushed: ${committedCount}`, 'green');
   
   if (failedFolders.length > 0) {
     log('\n❌ Failed Folders (need manual intervention):', 'red');
